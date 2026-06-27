@@ -1,7 +1,7 @@
 ---
-title: "TypeScript Type Reference for Sideffect"
+title: "Sideffect TypeScript Type Definitions API Reference"
 sidebarTitle: "Types"
-description: "Complete TypeScript type reference for all public interfaces and type aliases exported from the sideffect package, including WorkflowLayer, StepDefinition, and StepContext."
+description: "TypeScript type reference for public interfaces and aliases exported from sideffect: WorkflowLayer, StepDefinition, StepContext, RollbackContext, and more."
 ---
 
 Sideffect exports a rich set of TypeScript types for working with workflows, steps, and their contexts. All types are exported from `sideffect`.
@@ -261,22 +261,6 @@ interface RollbackContext<Payload, Result, Env = DefaultCloudflareEnv> {
 ---
 
 ## Utility Types
-
-### `MaybeEffect<A>`
-
-`A | Promise<A> | Effect.Effect<A, unknown, never>`. Values returned by step and workflow `run` functions may be a plain value, a `Promise`, or an Effect `Effect`. Sideffect normalises all three at runtime.
-
-```ts
-type MaybeEffect<A> = A | Promise<A> | Effect.Effect<A, unknown, never>;
-```
-
-### `SchemaType<S>`
-
-Extracts the decoded TypeScript value from an Effect Schema. Useful when you need to derive a plain type from a schema definition without referencing the schema type parameter directly.
-
-```ts
-type SchemaType<S> = S extends Schema.Schema<infer A> ? A : never;
-```
 
 ### `DefaultCloudflareEnv`
 

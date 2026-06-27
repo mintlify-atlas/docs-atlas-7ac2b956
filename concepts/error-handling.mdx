@@ -56,8 +56,7 @@ You do not always need to throw `NonRetryableError` manually. Sideffect automati
 Before `run` is called, Sideffect decodes the payload using the step's `payload` schema. If decoding fails, a `NonRetryableError` is thrown with a message in this format:
 
 ```
-Step "X" payload decoding failed because the value did not match its schema.
-The workflow will not retry this invalid input. Cause: ...
+Step "X" payload decoding failed because the value did not match its schema. The workflow will not retry this invalid input. Cause: ...
 ```
 
 ### Result validation
@@ -65,8 +64,7 @@ The workflow will not retry this invalid input. Cause: ...
 After `run` returns, Sideffect decodes the result using the step's `result` schema. If decoding fails, a `NonRetryableError` is thrown with the same structure:
 
 ```
-Step "X" result decoding failed because the value did not match its schema.
-The workflow will not retry this invalid input. Cause: ...
+Step "X" result decoding failed because the value did not match its schema. The workflow will not retry this invalid input. Cause: ...
 ```
 
 This means that once you define schemas, invalid data shapes are always treated as permanent failures — no additional error handling is required.

@@ -1,7 +1,7 @@
 ---
 title: "createSideffectWorkflowsPlugin() Low-Level Plugin Factory"
 sidebarTitle: "createSideffectWorkflowsPlugin"
-description: "createSideffectWorkflowsPlugin() creates the Sideffect Vite plugin without invoking Cloudflare's plugin factory. Use for tests or custom plugin composition."
+description: "createSideffectWorkflowsPlugin() creates the Sideffect Vite plugin without invoking Cloudflare's plugin factory. Use for tests or custom composition."
 ---
 
 `createSideffectWorkflowsPlugin` is the low-level equivalent of `withCloudflareWorkflows`. It creates only the Sideffect plugin — it does **not** call Cloudflare's plugin factory for you. Instead it exposes a `cloudflare` property on the returned plugin object that contains the fully resolved `CloudflarePluginConfig` you pass manually to Cloudflare's factory. This gives you full control over plugin ordering, multiple-Vite-environment setups, and test harnesses where you want to inspect the resolved Cloudflare config before any plugin runs. Import it from `sideffect/vite`.

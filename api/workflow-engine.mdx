@@ -1,7 +1,7 @@
 ---
-title: "WorkflowEngine Internal Runtime Bridge"
+title: "WorkflowEngine API Reference – Sideffect Runtime Bridge"
 sidebarTitle: "WorkflowEngine"
-description: "WorkflowEngine is the low-level runtime bridge used by generated Cloudflare entrypoints. Documents WorkflowEngine.make() and WorkflowEngine.run() for advanced use."
+description: "Reference for WorkflowEngine.make() and WorkflowEngine.run(), the low-level Sideffect bridge between workflow layers and Cloudflare Workers."
 ---
 
 `WorkflowEngine` is the low-level runtime bridge that connects Sideffect workflow layers to the Cloudflare Workers runtime. Most users will never call it directly — it is used internally by `WorkflowEntrypoints.make()` and by the Vite-generated `virtual:sideffect/entry` module. Import it from `sideffect`.

@@ -1,7 +1,7 @@
 ---
 title: "NonRetryableError: Stop Workflow Retry on Fatal Errors"
 sidebarTitle: "NonRetryableError"
-description: "NonRetryableError is a portable error class that tells Cloudflare Workflows not to retry the current step or workflow on fatal or invalid-input failures."
+description: "NonRetryableError signals a permanent workflow failure. Cloudflare Workflows will not retry when this error is thrown from a step or workflow run function."
 ---
 
 `NonRetryableError` is imported from `sideffect`. When thrown from a step's `run` function or directly from a workflow's `run` function, it signals that the failure is permanent — Cloudflare should mark the workflow as failed and must not attempt to retry it.

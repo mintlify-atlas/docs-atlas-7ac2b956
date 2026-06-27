@@ -1,7 +1,7 @@
 ---
-title: "Sideffect: Composable Typed Cloudflare Workflows"
+title: "Sideffect: Build Typed Cloudflare Workflows in TypeScript"
 sidebarTitle: "Introduction"
-description: "Sideffect is a TypeScript library that builds Cloudflare Workflows from typed steps, with a Vite plugin that auto-generates Wrangler bindings and env types."
+description: "TypeScript library for Cloudflare Workflows. Define typed steps, compose them into durable workflows, and generate Wrangler bindings in Vite automatically."
 ---
 
 Sideffect lets you define Cloudflare Workflows as composable, schema-backed steps written in TypeScript — and then gets out of your way. Instead of hand-maintaining `wrangler.toml` workflow entries and casting untyped step payloads, you describe each activity once with `Step.make`, compose them into a `Workflow`, and let the Vite plugin discover your files, generate the native `WorkflowEntrypoint` classes, and inject the correct Wrangler bindings and `Env` types automatically. The result is a fully Cloudflare-native workflow with end-to-end type safety and zero boilerplate config.
@@ -16,7 +16,7 @@ Sideffect ships three entry points, each with a distinct responsibility:
 
 | Import path | Purpose |
 |---|---|
-| `sideffect` | Core library — `Workflow`, `Step`, `Schema`, `Rollback`, and related types. |
+| `sideffect` | Core library — `Workflow`, `Step`, `Schema`, `Rollback`, `TaggedError`, `NonRetryableError`, `WorkflowEngine`, and related types. |
 | `sideffect/vite` | Vite plugin adapter — wraps `@cloudflare/vite-plugin` to auto-discover workflow layers and generate bindings. |
 | `sideffect/cloudflare` | Manual adapter — exposes `WorkflowEntrypoints.make` for projects that use plain Wrangler without Vite. |
 

@@ -1,7 +1,7 @@
 ---
-title: "Auto-Generated Workflow Env Types from Sideffect"
+title: "Auto-Generated sideffect-env.d.ts Workflow Binding Types"
 sidebarTitle: "Generated Types"
-description: "Sideffect writes a sideffect-env.d.ts file that extends the global Env and Cloudflare.Env interfaces with typed workflow bindings."
+description: "Sideffect writes a sideffect-env.d.ts file that extends the global Env and Cloudflare.Env interfaces with fully typed, schema-derived workflow bindings."
 ---
 
 After Sideffect finishes discovering your workflow layers, it writes a file called `sideffect-env.d.ts` in your project root (or next to your Wrangler config if you pass `configPath`). This file uses TypeScript's global interface augmentation to add each discovered workflow binding to both the `Env` and `Cloudflare.Env` interfaces, giving every Worker handler fully typed access to its workflow bindings without any manual type declarations.

@@ -1,7 +1,7 @@
 ---
-title: "Step API Reference"
+title: "Step.make API Reference for Typed Cloudflare Workflow Steps"
 sidebarTitle: "Step"
-description: "API reference for Step.make(). Defines reusable, schema-validated workflow step activities with typed payloads and results."
+description: "API reference for Step.make(). Creates reusable, schema-validated Cloudflare Workflow step definitions with typed payloads and results."
 ---
 
 `Step` is used to create reusable typed workflow activities. Each step has a name, an input schema, an output schema, and a `run` function that performs the work. Sideffect validates both the payload and the result against their schemas automatically, so your `run` function always receives the correct shape and always returns the correct shape. Import `Step` directly from `sideffect`.
@@ -56,40 +56,27 @@ Creates a reusable `StepDefinition`. The returned definition can be passed to `s
 
 ## `StepOptions`
 
-Passed as the third argument to `step.do(stepDefinition, payload, options?)` inside a workflow `run` function. All fields are optional.
+Passed as the third argument to `step.do(stepDefinition, payload, options?)` inside a workflow `run` function. All fields are optional and delegate directly to Cloudflare's `WorkflowStepConfig`.
 
 ```ts
 interface StepOptions {
-  retries?: {
-    limit: number;
-    delay: string | number;
-    backoff?: "constant" | "linear" | "exponential";
-  };
-  timeout?: string | number;
-  sensitive?: boolean;
+  retries?: WorkflowStepConfig["retries"];
+  timeout?: WorkflowStepConfig["timeout"];
+  sensitive?: WorkflowStepConfig["sensitive"];
 }
 ```
 
-<ParamField path="retries.limit" type="number">
-  Maximum number of retries Cloudflare will attempt if the step throws.
+<ParamField path="retries" type="WorkflowStepConfig[&quot;retries&quot;]">
+  Cloudflare retry configuration for the step. The shape is defined by
+  Cloudflare's `WorkflowStepConfig` type from `cloudflare:workers`.
 </ParamField>
 
-<ParamField path="retries.delay" type="string | number">
-  Delay between retries. A Cloudflare duration string (e.g. `"15 seconds"`) or
-  a number of milliseconds.
-</ParamField>
-
-<ParamField path="retries.backoff" type='"constant" | "linear" | "exponential"'>
-  Backoff strategy for retry delays. Defaults to `"constant"` when not
-  specified.
-</ParamField>
-
-<ParamField path="timeout" type="string | number">
+<ParamField path="timeout" type="WorkflowStepConfig[&quot;timeout&quot;]">
   Maximum execution time for the step. A Cloudflare duration string (e.g.
   `"5 minutes"`) or a number of milliseconds.
 </ParamField>
 
-<ParamField path="sensitive" type="boolean">
+<ParamField path="sensitive" type="WorkflowStepConfig[&quot;sensitive&quot;]">
   When `true`, Cloudflare treats step logs and output as sensitive and redacts
   them from the Workflows dashboard.
 </ParamField>
@@ -155,11 +142,7 @@ export const stepContextLayer = workflow.toLayer(async ({ payload }, step) => {
 ```ts
 export const workflowLayer = workflow.toLayer(async ({ payload }, step) => {
   const result = await step.do(fetchImageStep, { imageKey: payload.imageKey }, {
-    retries: {
-      limit: 3,
-      delay: "15 seconds",
-      backoff: "exponential",
-    },
+    retries: { limit: 3, delay: "15 seconds", backoff: "exponential" },
     timeout: "2 minutes",
   });
 

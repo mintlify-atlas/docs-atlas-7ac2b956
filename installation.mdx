@@ -1,7 +1,7 @@
 ---
 title: "Install Sideffect in Your Cloudflare Worker Project"
 sidebarTitle: "Installation"
-description: "Add Sideffect to a Cloudflare Worker project. Covers peer dependencies, package manager commands, and TypeScript configuration."
+description: "Add Sideffect to a Cloudflare Worker project. Covers peer dependencies, package manager install commands, and TypeScript configuration steps."
 ---
 
 Installing Sideffect adds the core library and its required peer dependency, [Effect](https://effect.website). Effect provides the schema primitives (`Schema.Struct`, `Schema.String`, and friends) that back Sideffect's typed step payloads and results. If you are using the Vite-based setup — the recommended path — you will also install `@cloudflare/vite-plugin` so the workflow auto-discovery plugin has something to wrap. The `@cloudflare/workers-types` package is optional but strongly recommended for full `env` type coverage inside step `run` functions.
@@ -115,7 +115,7 @@ import { withCloudflareWorkflows } from "sideffect/vite";
 
 export default defineConfig({
   plugins: [
-    withCloudflareWorkflows(cloudflare, {
+    ...withCloudflareWorkflows(cloudflare, {
       workflowPaths: ["src/workflows"],
     }),
   ],

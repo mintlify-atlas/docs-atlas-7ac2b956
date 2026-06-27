@@ -1,7 +1,7 @@
 ---
 title: "Workflows: Defining Typed Cloudflare Workflow Pipelines"
 sidebarTitle: "Workflows"
-description: "Learn how Sideffect workflows are defined with Workflow.make() and composed into executable WorkflowLayers using toLayer()."
+description: "Learn how Sideffect workflows are defined with Workflow.make() and attached to an implementation using toLayer() to produce a runnable WorkflowLayer."
 ---
 
 A **workflow** in Sideffect is a named, typed pipeline that executes a sequence of steps inside Cloudflare's durable Workflow runtime. You define the shape of the incoming payload once with `Workflow.make()`, producing a `WorkflowDefinition`. You then attach the execution logic by calling `.toLayer(run)`, which produces a `WorkflowLayer` — the runnable unit that Sideffect registers with Cloudflare.

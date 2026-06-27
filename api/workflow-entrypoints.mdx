@@ -1,5 +1,5 @@
 ---
-title: "WorkflowEntrypoints API Reference"
+title: "WorkflowEntrypoints API – Cloudflare Workflow Adapter"
 sidebarTitle: "WorkflowEntrypoints"
 description: "API reference for WorkflowEntrypoints.make(). Converts Sideffect WorkflowLayers into named Cloudflare WorkflowEntrypoint subclass exports."
 ---
@@ -18,7 +18,7 @@ description: "API reference for WorkflowEntrypoints.make(). Converts Sideffect W
 ### Function signature
 
 ```ts
-WorkflowEntrypoints.make<Entries extends WorkflowLayerEntries>(
+WorkflowEntrypoints.make<const Entries extends WorkflowLayerEntries>(
   entries: Entries
 ): { readonly [K in keyof Entries]: WorkflowEntrypointConstructor }
 ```

@@ -1,7 +1,7 @@
 ---
 title: "Static Workflow Discovery with TypeScript AST Analysis"
 sidebarTitle: "Workflow Discovery"
-description: "Sideffect's Vite plugin discovers WorkflowLayer exports using static TypeScript AST analysis — no runtime execution during build. Learn what patterns are supported."
+description: "Sideffect finds WorkflowLayer exports via static TypeScript AST — no runtime execution at build. Learn which patterns and file extensions are supported."
 ---
 
 When you run `vite build` or `vite dev`, Sideffect reads your workflow source files with the TypeScript parser and walks the AST to find exported `WorkflowLayer` values — it never imports or executes your modules during this phase. This means discovery is safe to run in any environment, works before your runtime dependencies are available, and cannot trigger side effects from your application code.
@@ -140,3 +140,19 @@ Sideffect also follows barrel re-exports. If a file contains `export * from "./o
   npm install -D typescript
   ```
 </Note>
+
+## Using `collectWorkflowEntries` directly
+
+`collectWorkflowEntries` is exported from `sideffect/vite` for cases where you need to run workflow discovery outside of the Vite plugin — for example, in a custom build script or a test helper that asserts which workflows are registered.
+
+```ts
+import { collectWorkflowEntries } from "sideffect/vite";
+
+const workflows = collectWorkflowEntries(["src/workflows"], process.cwd());
+
+for (const workflow of workflows) {
+  console.log(workflow.config.binding, "→", workflow.config.class_name);
+}
+```
+
+The function accepts the same `workflowPaths` array and an optional `baseDirectory` (defaults to `process.cwd()`). It returns the same `CapturedSideffectWorkflow[]` array that `withCloudflareWorkflows` uses internally when writing bindings and the `sideffect-env.d.ts` type file.

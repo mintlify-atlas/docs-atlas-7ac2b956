@@ -1,7 +1,7 @@
 ---
-title: "WorkflowEntrypoints.make(): Create Cloudflare Entrypoint Classes"
+title: "WorkflowEntrypoints.make(): Cloudflare Entrypoint Classes"
 sidebarTitle: "WorkflowEntrypoints"
-description: "WorkflowEntrypoints.make() converts Sideffect WorkflowLayers into named Cloudflare WorkflowEntrypoint subclass exports for use in plain Wrangler Worker setups."
+description: "WorkflowEntrypoints.make() converts WorkflowLayer objects into named Cloudflare WorkflowEntrypoint subclasses ready to export from your Worker entry file."
 ---
 
 `WorkflowEntrypoints.make()` is the manual adapter that turns Sideffect `WorkflowLayer` objects into the native Cloudflare `WorkflowEntrypoint` subclasses that Wrangler expects to find exported from your Worker entry file. You use it directly when you are not using the Vite plugin — for example, in projects that rely on Wrangler alone or need full control over how entrypoints are registered. Under the hood, each generated class extends Cloudflare's `WorkflowEntrypoint`, decodes the incoming event payload through the workflow's schema, and delegates execution to the layer's `run` function. `NonRetryableError` from `cloudflare:workflows` is imported and used at the entrypoint boundary to convert Sideffect's portable non-retryable error into the native Cloudflare type that the Workers runtime recognises.

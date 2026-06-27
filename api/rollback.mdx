@@ -1,5 +1,5 @@
 ---
-title: "Rollback API Reference"
+title: "Rollback.with API Reference for Step Rollback Handlers"
 sidebarTitle: "Rollback"
 description: "API reference for Rollback.with(). Attaches a Cloudflare-native rollback handler and optional step config to a Sideffect StepDefinition."
 ---
@@ -32,18 +32,8 @@ Returns a function `(step: StepDefinition) => StepDefinition` that attaches a ro
 
 <ParamField path="config" type="WorkflowStepConfig">
   Optional Cloudflare step configuration for the rollback step itself. Accepts
-  the same shape as the `retries` and `timeout` fields in `StepOptions`:
-
-  ```ts
-  {
-    retries?: {
-      limit: number;
-      delay: string | number;
-      backoff?: "constant" | "linear" | "exponential";
-    };
-    timeout?: string | number;
-  }
-  ```
+  the same `WorkflowStepConfig` type from `cloudflare:workers` that controls
+  retries and timeout for the rollback execution.
 </ParamField>
 
 **Returns** a function `(step: StepDefinition<Payload, Result, Env>) => StepDefinition<Payload, Result, Env>` — the same step definition with the rollback handler attached.

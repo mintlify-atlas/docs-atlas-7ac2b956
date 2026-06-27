@@ -1,5 +1,5 @@
 ---
-title: "Configure Sideffect with Cloudflare's Vite Plugin"
+title: "Setting Up Sideffect with Cloudflare's Vite Plugin"
 sidebarTitle: "Setup"
 description: "Wrap @cloudflare/vite-plugin with withCloudflareWorkflows() to auto-discover workflow layers and generate Wrangler bindings and env types."
 ---
@@ -25,7 +25,7 @@ export default defineConfig({
 ```
 
 <Note>
-  `withCloudflareWorkflows` returns a two-element tuple `[sideffectPlugin, cloudflarePlugin]`. Always spread it with `...` into the `plugins` array so both plugins are registered in the correct order.
+  `withCloudflareWorkflows` returns an `Array<Plugin | Result>` containing the Sideffect plugin followed by the Cloudflare plugin. Always spread it with `...` into the `plugins` array so both plugins are registered in the correct order.
 </Note>
 
 <Warning>

@@ -1,5 +1,5 @@
 ---
-title: "Steps: Reusable Typed Workflow Activities"
+title: "Steps: Typed, Reusable Cloudflare Workflow Activities"
 sidebarTitle: "Steps"
 description: "Sideffect steps are typed, reusable workflow activities defined with Step.make(). Payloads and results are validated against Effect Schema at runtime."
 ---
@@ -80,7 +80,7 @@ export const effectUppercase = Step.make("effect uppercase", {
 Before `run` is called, Sideffect decodes the incoming payload with `Schema.decodeUnknownSync`. If decoding fails, the step throws a `NonRetryableError` with the message:
 
 ```
-Step "X" payload decoding failed because the value did not match its schema.
+Step "X" payload decoding failed because the value did not match its schema. The workflow will not retry this invalid input. Cause: ...
 ```
 
 This prevents Cloudflare from retrying a step that will always fail due to an invalid input shape.
@@ -90,7 +90,7 @@ This prevents Cloudflare from retrying a step that will always fail due to an in
 After `run` returns, Sideffect decodes the result with the `result` schema before returning it to the calling workflow. If the decoded value does not match the schema, a `NonRetryableError` is thrown:
 
 ```
-Step "X" result decoding failed because the value did not match its schema.
+Step "X" result decoding failed because the value did not match its schema. The workflow will not retry this invalid input. Cause: ...
 ```
 
 ## Executing a Step from a Workflow with `step.do`
@@ -105,25 +105,16 @@ The optional third argument `options` maps directly to Cloudflare's `WorkflowSte
 
 ```ts
 interface StepOptions {
-  retries?: {
-    limit: number;
-    delay: string | number;
-    backoff?: "constant" | "linear" | "exponential";
-  };
-  timeout?: string | number;
-  sensitive?: boolean;
+  retries?: WorkflowStepConfig["retries"];
+  timeout?: WorkflowStepConfig["timeout"];
+  sensitive?: WorkflowStepConfig["sensitive"];
 }
 ```
 
-### Example — step with retry configuration
+### Example — step with timeout configuration
 
 ```ts
 const result = await step.do(fetchImageStep, { imageKey: "photo-123" }, {
-  retries: {
-    limit: 3,
-    delay: "5 seconds",
-    backoff: "exponential",
-  },
   timeout: "30 seconds",
 });
 ```

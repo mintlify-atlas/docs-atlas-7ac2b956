@@ -1,7 +1,7 @@
 ---
-title: "withCloudflareWorkflows() Vite Plugin API"
+title: "withCloudflareWorkflows() — Sideffect Vite Plugin API"
 sidebarTitle: "withCloudflareWorkflows"
-description: "API reference for withCloudflareWorkflows(). Wraps @cloudflare/vite-plugin with Sideffect workflow discovery, auto-binding generation, and env type writing."
+description: "API reference for withCloudflareWorkflows(). Wraps @cloudflare/vite-plugin with Sideffect workflow discovery, binding generation, and env type writing."
 ---
 
 `withCloudflareWorkflows` is the primary Vite integration function for Sideffect. It wraps Cloudflare's Vite plugin factory, scans your configured workflow directories for `Workflow.make(...).toLayer(...)` exports, auto-generates Cloudflare workflow bindings, writes a `sideffect-env.d.ts` type declaration file, and replaces the Worker entry with a generated virtual module that exports named `WorkflowEntrypoint` subclasses. Import it from `sideffect/vite`.
@@ -108,6 +108,31 @@ export default defineConfig({
 <ParamField path="options.auxiliaryWorkers" type="array">
   Additional Workers to run or build alongside the entry Worker. Each entry mirrors Cloudflare's
   auxiliary Worker config shape, accepting either a `configPath` or an inline `config` customizer.
+</ParamField>
+
+<ParamField path="options.viteEnvironment" type="CloudflareViteEnvironmentConfig">
+  Vite environment settings for the entry Worker. Use `name` to specify which Vite environment the
+  Worker runs in (for example `"ssr"` in a TanStack Start project). Optionally specify
+  `childEnvironments` to associate additional Vite environments with this Worker.
+
+  ```ts
+  withCloudflareWorkflows(cloudflare, {
+    viteEnvironment: { name: "ssr" },
+  })
+  ```
+</ParamField>
+
+<ParamField path="options.assetsOnly" type="boolean | (() => boolean)">
+  When `true` (or a function returning `true`), the entry Worker is omitted from production builds
+  and only used for local development. Forwarded unchanged to `@cloudflare/vite-plugin`.
+</ParamField>
+
+<ParamField path="options.tunnel" type="boolean | CloudflareTunnelConfig">
+  Cloudflare Tunnel sharing options for `vite dev` or `vite preview` servers.
+
+  - `true` — starts a quick Cloudflare Tunnel automatically.
+  - `{ autoStart, name }` — optionally auto-start and/or use a named Cloudflare Tunnel instead of
+    a quick tunnel.
 </ParamField>
 
 <ParamField path="options.experimental" type="CloudflareExperimentalConfig">

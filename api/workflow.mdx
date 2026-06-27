@@ -1,7 +1,7 @@
 ---
-title: "Workflow API Reference"
+title: "Workflow.make and WorkflowDefinition.toLayer API Reference"
 sidebarTitle: "Workflow"
-description: "API reference for Workflow.make() and WorkflowDefinition.toLayer(). Creates typed Cloudflare Workflow definitions and WorkflowLayer instances."
+description: "Define typed Cloudflare Workflow definitions with Workflow.make() and bind them to an implementation with WorkflowDefinition.toLayer()."
 ---
 
 `Workflow` is the entry point for defining a Cloudflare Workflow in Sideffect. It creates a typed workflow definition that you bind to an implementation and, from there, expose to the Cloudflare Workflows runtime. Import it directly from `sideffect`.
@@ -27,13 +27,11 @@ Creates a typed `WorkflowDefinition`. The definition holds the workflow name and
   | `"billing"` | `Billing` | `BILLING` |
 </ParamField>
 
-<ParamField path="options.payload" type="Schema.Schema<Payload>">
+<ParamField path="options.payload" type="Schema.Schema<Payload>" required>
   An [Effect Schema](https://effect.website/docs/schema/introduction) used to
   decode the raw Cloudflare workflow event payload before the `run` function
   executes. Decode failures are automatically converted to `NonRetryableError`
   so the workflow is not retried on invalid input.
-
-  If omitted, the payload is passed through as-is without decoding.
 </ParamField>
 
 **Returns** a `WorkflowDefinition<Payload, Env>` with a `toLayer()` method.
@@ -70,7 +68,7 @@ Runs a typed `StepDefinition` through Cloudflare's native step system. Sideffect
 
 <ParamField path="stepDefinition" type="StepDefinition<Payload, Result, Env>" required>
   A step created with `Step.make(...)`, optionally decorated with
-  `Rollback.with(...)`.
+  `Rollback.with(...)`).
 </ParamField>
 
 <ParamField path="payload" type="Payload" required>
@@ -79,18 +77,6 @@ Runs a typed `StepDefinition` through Cloudflare's native step system. Sideffect
 
 <ParamField path="options" type="StepOptions">
   Optional Cloudflare step configuration. See [`StepOptions`](/api/step#stepoptions) for the full shape.
-
-  ```ts
-  {
-    retries?: {
-      limit: number;
-      delay: string | number;
-      backoff?: "constant" | "linear" | "exponential";
-    };
-    timeout?: string | number;
-    sensitive?: boolean;
-  }
-  ```
 </ParamField>
 
 **Returns** `Promise<Result>` — the decoded step result.

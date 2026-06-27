@@ -1,0 +1,179 @@
+---
+title: "Steps: Reusable Typed Workflow Activities"
+sidebarTitle: "Steps"
+description: "Sideffect steps are typed, reusable workflow activities defined with Step.make(). Payloads and results are validated against Effect Schema at runtime."
+---
+
+A **step** in Sideffect is a named, self-contained unit of work that can be reused across multiple workflows. Each step carries its own Effect Schema for both its input (payload) and its output (result), ensuring that data passing in and out of every Cloudflare Workflow step is validated at runtime. Defining steps separately from workflows keeps your business logic composable, testable, and easy to share across workflow pipelines.
+
+## Defining a Step with `Step.make`
+
+```ts
+import { Schema, Step } from "sideffect";
+
+const myStep = Step.make("step name", {
+  payload: Schema.Struct({ ... }),
+  result:  Schema.Struct({ ... }),
+  run: async (payload, ctx) => { ... },
+});
+```
+
+`Step.make` accepts a human-readable `name` (used as the Cloudflare step name for checkpointing) and an options object with three required fields:
+
+| Option    | Type                                       | Description                                                               |
+| --------- | ------------------------------------------ | ------------------------------------------------------------------------- |
+| `payload` | `Schema.Schema<Payload>`                   | Decoded before `run` executes. Validation failures become non-retryable errors. |
+| `result`  | `Schema.Schema<Result>`                    | Decoded before the result is returned from `step.do()`. Validation failures also become non-retryable errors. |
+| `run`     | `(payload: Payload, ctx: StepContext) => MaybeEffect<Result>` | The step implementation. May return a direct value, a `Promise`, or an `Effect.Effect`. |
+
+## Example Steps
+
+### Synchronous step — `addNumbers`
+
+The simplest steps return a direct value with no async work needed.
+
+```ts
+import { Schema, Step } from "sideffect";
+
+export const addNumbers = Step.make("add numbers", {
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+  result: Schema.Number,
+  run: ({ left, right }) => left + right,
+});
+```
+
+### Async step — `multiplyNumber`
+
+Steps that call external services or perform I/O return a `Promise`.
+
+```ts
+export const multiplyNumber = Step.make("multiply number", {
+  payload: Schema.Struct({ value: Schema.Number, by: Schema.Number }),
+  result: Schema.Number,
+  run: async ({ value, by }) => value * by,
+});
+```
+
+### Effect step — `effectUppercase`
+
+When you prefer Effect's structured model, `run` can return an `Effect.Effect`.
+
+```ts
+import { Effect } from "effect";
+import { Schema, Step } from "sideffect";
+
+export const effectUppercase = Step.make("effect uppercase", {
+  payload: Schema.String,
+  result: Schema.String,
+  run: (message) => Effect.succeed(message.toUpperCase()),
+});
+```
+
+<Tip>
+  `run` accepts any of the three return shapes — a direct value, a `Promise`, or
+  an `Effect.Effect<Result, unknown, never>` — and Sideffect resolves them all to
+  a plain `Promise` before handing the result back to Cloudflare's step system.
+</Tip>
+
+## Payload Schema Validation
+
+Before `run` is called, Sideffect decodes the incoming payload with `Schema.decodeUnknownSync`. If decoding fails, the step throws a `NonRetryableError` with the message:
+
+```
+Step "X" payload decoding failed because the value did not match its schema.
+```
+
+This prevents Cloudflare from retrying a step that will always fail due to an invalid input shape.
+
+## Result Schema Validation
+
+After `run` returns, Sideffect decodes the result with the `result` schema before returning it to the calling workflow. If the decoded value does not match the schema, a `NonRetryableError` is thrown:
+
+```
+Step "X" result decoding failed because the value did not match its schema.
+```
+
+## Executing a Step from a Workflow with `step.do`
+
+Inside a workflow's `run` function, use the `step.do()` method on the `SideffectStep` façade to execute a step:
+
+```ts
+const result = await step.do(myStep, payload, options);
+```
+
+The optional third argument `options` maps directly to Cloudflare's `WorkflowStepConfig`:
+
+```ts
+interface StepOptions {
+  retries?: {
+    limit: number;
+    delay: string | number;
+    backoff?: "constant" | "linear" | "exponential";
+  };
+  timeout?: string | number;
+  sensitive?: boolean;
+}
+```
+
+### Example — step with retry configuration
+
+```ts
+const result = await step.do(fetchImageStep, { imageKey: "photo-123" }, {
+  retries: {
+    limit: 3,
+    delay: "5 seconds",
+    backoff: "exponential",
+  },
+  timeout: "30 seconds",
+});
+```
+
+### Example — reading `StepOptions` from the workbench
+
+The workbench `step-context` workflow passes a `timeout` directly:
+
+```ts
+export const stepContextLayer = Workflow.make({
+  name: "step-context",
+  payload: Schema.Struct({ label: Schema.String }),
+}).toLayer(async ({ payload }, step) => {
+  return step.do(readStepContext, payload, { timeout: "5 minutes" });
+});
+```
+
+## Reusing Steps Across Workflows
+
+Because a `StepDefinition` is just a plain object, the same step can be imported into multiple workflow files:
+
+```ts
+// workflows/resize.ts
+import { formatNumber } from "../steps";
+
+export const resizeLayer = Workflow.make({ ... }).toLayer(async (wf, step) => {
+  const result = await step.do(formatNumber, 42);
+  return result;
+});
+
+// workflows/report.ts
+import { formatNumber } from "../steps";
+
+export const reportLayer = Workflow.make({ ... }).toLayer(async (wf, step) => {
+  const label = await step.do(formatNumber, 99);
+  return { label };
+});
+```
+
+<CardGroup cols={2}>
+  <Card title="Workflows" icon="diagram-project" href="/concepts/workflows">
+    Compose steps into full workflow pipelines.
+  </Card>
+  <Card title="Rollback" icon="rotate-left" href="/concepts/rollback">
+    Attach compensation handlers to steps with Rollback.with().
+  </Card>
+  <Card title="Step Context" icon="circle-info" href="/concepts/step-context">
+    Access env bindings, retry counts, and step metadata inside a step.
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Throw NonRetryableError to stop retries immediately.
+  </Card>
+</CardGroup>

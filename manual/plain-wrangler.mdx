@@ -1,0 +1,136 @@
+---
+title: "Use Sideffect Without Vite: Plain Wrangler Setup"
+sidebarTitle: "Plain Wrangler"
+description: "Set up Sideffect workflows without the Vite plugin by manually exporting WorkflowEntrypoint classes and configuring wrangler.jsonc bindings."
+---
+
+If your project does not use Vite, or you need explicit control over every aspect of your Wrangler configuration, you can wire Sideffect up directly without the Vite adapter. In this mode you manually export the generated `WorkflowEntrypoint` classes from your Worker entry file and declare the corresponding workflow bindings in `wrangler.jsonc`. There is no code generation or automatic discovery — everything is explicit and fully transparent.
+
+<Info>
+  **Vite vs. plain Wrangler:** Use the Vite adapter (`withCloudflareWorkflows` from `sideffect/vite`) when you want automatic workflow discovery, generated `wrangler.jsonc` bindings, and auto-generated env types. Use the plain Wrangler setup when you are not using Vite, need full control over your Wrangler configuration, or want to integrate Sideffect into an existing non-Vite build pipeline.
+</Info>
+
+<Steps>
+  <Step title="Define a workflow layer">
+    Create your workflow definition and bind it to an implementation using `.toLayer()`. The `name` field controls how Cloudflare identifies the workflow and must match the `name` field you will add to `wrangler.jsonc` in a later step.
+
+    ```ts
+    // src/workflows/my-workflow.ts
+    import { Schema, Workflow } from "sideffect";
+
+    const workflow = Workflow.make({
+      name: "image-processing",
+      payload: Schema.Struct({
+        imageKey: Schema.String,
+      }),
+    });
+
+    export const myWorkflowLayer = workflow.toLayer(async (event, step) => {
+      // workflow implementation using step.do(), step.sleep(), etc.
+      return { imageKey: event.payload.imageKey };
+    });
+    ```
+  </Step>
+
+  <Step title="Create entrypoints">
+    Use `WorkflowEntrypoints.make()` from `sideffect/cloudflare` to convert your workflow layer into a native Cloudflare `WorkflowEntrypoint` subclass. Pass an object where each key is the desired `class_name` as it will appear in `wrangler.jsonc`.
+
+    ```ts
+    import { WorkflowEntrypoints } from "sideffect/cloudflare";
+    import { myWorkflowLayer } from "./workflows/my-workflow";
+
+    export const { ImageProcessing } = WorkflowEntrypoints.make({
+      ImageProcessing: myWorkflowLayer,
+    });
+    ```
+
+    <Note>
+      The key you pass to `WorkflowEntrypoints.make()` — `ImageProcessing` in the example above — must exactly match the `class_name` you declare in `wrangler.jsonc`. Sideffect validates that this key is a valid JavaScript identifier at runtime and throws a `TypeError` if it is not.
+    </Note>
+  </Step>
+
+  <Step title="Export from Worker entry">
+    Combine the generated entrypoint export with your Worker's `fetch` handler in a single entry file. The workflow binding (`IMAGE_PROCESSING` here) is available on `env` and used exactly as you would use any other Cloudflare binding.
+
+    ```ts
+    // src/index.ts
+    import { WorkflowEntrypoints } from "sideffect/cloudflare";
+    import { myWorkflowLayer } from "./workflows/my-workflow";
+
+    type Params = {
+      imageKey: string;
+    };
+
+    declare global {
+      namespace Cloudflare {
+        interface Env {
+          BUCKET: R2Bucket;
+          AI: Ai;
+          IMAGE_PROCESSING: Workflow<Params>;
+        }
+      }
+
+      interface Env extends Cloudflare.Env {}
+    }
+
+    export const { ImageProcessing } = WorkflowEntrypoints.make({
+      ImageProcessing: myWorkflowLayer,
+    });
+
+    export default {
+      async fetch(_req: Request, env: Env): Promise<Response> {
+        const instance = await env.IMAGE_PROCESSING.create({
+          params: {
+            imageKey: "uploaded-photo-123",
+          },
+        });
+
+        return Response.json({ id: instance.id });
+      },
+    };
+    ```
+  </Step>
+
+  <Step title="Configure wrangler.jsonc">
+    Register the workflow in your `wrangler.jsonc`. The `binding` field is the name exposed on `env`, `name` must match the `name` used in `Workflow.make()`, and `class_name` must match the key you passed to `WorkflowEntrypoints.make()`.
+
+    ```jsonc
+    {
+      "main": "src/index.ts",
+      "workflows": [
+        {
+          "binding": "IMAGE_PROCESSING",
+          "name": "image-processing",
+          "class_name": "ImageProcessing"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      The `class_name` value in `wrangler.jsonc` must exactly match the key passed to `WorkflowEntrypoints.make()`. Cloudflare uses `class_name` to locate the exported `WorkflowEntrypoint` subclass in your Worker bundle.
+    </Note>
+  </Step>
+
+  <Step title="Add env types">
+    If you are not using `wrangler types` or want to type the workflow binding manually, augment the `Cloudflare.Env` interface with the binding name and its payload parameter type. The `Workflow<Params>` generic is the native Cloudflare type from `cloudflare:workers`.
+
+    ```ts
+    type Params = {
+      imageKey: string;
+    };
+
+    declare global {
+      namespace Cloudflare {
+        interface Env {
+          IMAGE_PROCESSING: Workflow<Params>;
+        }
+      }
+
+      interface Env extends Cloudflare.Env {}
+    }
+    ```
+
+    This declaration makes `env.IMAGE_PROCESSING` fully typed in your Worker fetch handler and anywhere else `Env` is referenced. You can place it in a dedicated `src/env.d.ts` file or inline it in your Worker entry as shown in the step above.
+  </Step>
+</Steps>

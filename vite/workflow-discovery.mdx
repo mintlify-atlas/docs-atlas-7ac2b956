@@ -1,0 +1,142 @@
+---
+title: "Static Workflow Discovery with TypeScript AST Analysis"
+sidebarTitle: "Workflow Discovery"
+description: "Sideffect's Vite plugin discovers WorkflowLayer exports using static TypeScript AST analysis — no runtime execution during build. Learn what patterns are supported."
+---
+
+When you run `vite build` or `vite dev`, Sideffect reads your workflow source files with the TypeScript parser and walks the AST to find exported `WorkflowLayer` values — it never imports or executes your modules during this phase. This means discovery is safe to run in any environment, works before your runtime dependencies are available, and cannot trigger side effects from your application code.
+
+## Supported export patterns
+
+Sideffect recognises four static forms. Any of these can appear in the files or directories you list in `workflowPaths`.
+
+### 1. Inline `Workflow.make(...).toLayer(...)`
+
+The most direct form: call `Workflow.make` and chain `.toLayer` in a single exported variable declaration.
+
+```ts
+import { Schema, Step, Workflow } from "sideffect";
+
+export const addNumbersLayer = Workflow.make({
+  name: "add-numbers",
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+}).toLayer(async (event, step) => {
+  return { result: event.payload.left + event.payload.right };
+});
+```
+
+### 2. Variable holding the definition, then `.toLayer()` in the same file
+
+You can define the workflow object first and call `.toLayer` on it later in the same file. Sideffect tracks the intermediate variable and resolves the name correctly.
+
+```ts
+import { Schema, Workflow } from "sideffect";
+
+const myWorkflow = Workflow.make({
+  name: "my-workflow",
+  payload: Schema.Struct({ message: Schema.String }),
+});
+
+export const myLayer = myWorkflow.toLayer(async (event) => {
+  return { echo: event.payload.message };
+});
+```
+
+### 3. Imported workflow definition from a relative module
+
+The workflow definition can live in a separate file and be imported into the file that calls `.toLayer`. Sideffect follows local relative imports to resolve the definition.
+
+```ts
+// src/workflows/definition.ts
+import { Schema, Workflow } from "sideffect";
+
+export const myWorkflow = Workflow.make({
+  name: "my-workflow",
+  payload: Schema.Struct({ message: Schema.String }),
+});
+```
+
+```ts
+// src/workflows/my-workflow.ts
+import { myWorkflow } from "./definition";
+
+export const myLayer = myWorkflow.toLayer(async (event) => {
+  return { echo: event.payload.message };
+});
+```
+
+### 4. Default-exported workflow layer
+
+A default export is also discovered. Sideffect uses `"default"` as the export name internally and derives the class name and binding from `workflow.name` as usual.
+
+```ts
+import { Schema, Workflow } from "sideffect";
+
+const myWorkflow = Workflow.make({
+  name: "my-workflow",
+  payload: Schema.Struct({ message: Schema.String }),
+});
+
+export default myWorkflow.toLayer(async (event) => {
+  return { echo: event.payload.message };
+});
+```
+
+## Naming convention
+
+The `name` string you pass to `Workflow.make` drives two identifiers that Sideffect generates automatically:
+
+| `name` value | Cloudflare class name | Worker binding |
+|---|---|---|
+| `"add-numbers"` | `AddNumbers` | `ADD_NUMBERS` |
+| `"image-processing"` | `ImageProcessing` | `IMAGE_PROCESSING` |
+| `"billing_invoice"` | `BillingInvoice` | `BILLING_INVOICE` |
+
+**Class name rule:** the name is split on any run of non-alphanumeric characters, each part is capitalised, and the parts are joined — producing a PascalCase identifier that Cloudflare accepts as a `WorkflowEntrypoint` export name.
+
+**Binding rule:** the name is converted to SCREAMING\_SNAKE\_CASE by inserting underscores before uppercase-to-lowercase transitions and replacing non-alphanumeric runs with `_`, then the whole string is uppercased.
+
+## Unsupported patterns
+
+<Warning>
+  Dynamically constructed workflow names are **not** discoverable by static analysis. If the `name` property in `Workflow.make({ name: ... })` is not a string literal or template literal without substitutions, Sideffect will skip that export entirely and it will not appear in the generated bindings or type file.
+
+  ```ts
+  // ❌ Cannot be discovered — name is a runtime variable
+  const workflowName = getWorkflowName();
+  export const myLayer = Workflow.make({ name: workflowName }).toLayer(...);
+
+  // ✅ Discoverable — name is a string literal
+  export const myLayer = Workflow.make({ name: "my-workflow" }).toLayer(...);
+  ```
+
+  If you need a dynamically named workflow, register it manually via the `config.workflows` array in your `withCloudflareWorkflows` options and export the `WorkflowEntrypoint` class yourself.
+</Warning>
+
+## Configuring `workflowPaths`
+
+The `workflowPaths` option accepts an array of file or directory paths relative to your project root (or to the directory containing your Wrangler config if you pass `configPath`).
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  workflowPaths: [
+    "src/workflows",            // directory — scanned recursively
+    "src/jobs/billing.ts",      // single file
+    "../shared/src/workflows.ts", // file outside the project root
+  ],
+})
+```
+
+When a path points to a **directory**, Sideffect recursively reads every file whose extension is one of `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, or `.cjs`, skipping declaration files (`.d.ts`, `.d.mts`, `.d.cts`). When a path points to a **file**, that file is read directly without any directory traversal.
+
+Sideffect also follows barrel re-exports. If a file contains `export * from "./other-file"` or `export { myLayer } from "./other-file"` pointing at a local module, the referenced module is scanned for workflow layers automatically.
+
+## TypeScript dependency
+
+<Note>
+  Workflow discovery uses the TypeScript compiler API (`ts.createSourceFile`) to parse source files. The `typescript` package must be installed as a dev dependency in the project that uses `sideffect/vite`. Runtime usage of `sideffect` and `sideffect/cloudflare` in the Worker itself is unaffected and does not require TypeScript at runtime.
+
+  ```bash
+  npm install -D typescript
+  ```
+</Note>

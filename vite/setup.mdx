@@ -1,0 +1,182 @@
+---
+title: "Configure Sideffect with Cloudflare's Vite Plugin"
+sidebarTitle: "Setup"
+description: "Wrap @cloudflare/vite-plugin with withCloudflareWorkflows() to auto-discover workflow layers and generate Wrangler bindings and env types."
+---
+
+`withCloudflareWorkflows` is the recommended way to integrate Sideffect with your Cloudflare Workers project. It wraps Cloudflare's official Vite plugin, intercepts the Worker config before the build starts, scans your workflow source files for `Workflow.make(...).toLayer(...)` exports, injects the discovered bindings into the Wrangler config, and writes a typed `sideffect-env.d.ts` file — all without you touching `wrangler.toml` or `wrangler.jsonc` by hand.
+
+## Minimal setup
+
+Add `withCloudflareWorkflows` to your `vite.config.ts` and spread its return value into the `plugins` array:
+
+```ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [
+    ...withCloudflareWorkflows(cloudflare, {
+      workflowPaths: ["src/workflows"],
+    }),
+  ],
+});
+```
+
+<Note>
+  `withCloudflareWorkflows` returns a two-element tuple `[sideffectPlugin, cloudflarePlugin]`. Always spread it with `...` into the `plugins` array so both plugins are registered in the correct order.
+</Note>
+
+<Warning>
+  Sideffect replaces the Worker `main` entry with `virtual:sideffect/entry` during the Vite config phase. Do not set `main` to `virtual:sideffect/entry` in your `wrangler.jsonc` — keep it pointing at your real Worker source file (e.g., `src/index.ts`) and let Sideffect swap it at build time.
+</Warning>
+
+## Options reference
+
+`withCloudflareWorkflows` accepts a single options object of type `WithCloudflareWorkflowsOptions`. All fields are optional.
+
+### `workflowPaths`
+
+An array of file or directory paths (relative to the project root) that Sideffect scans for exported `WorkflowLayer` values.
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  workflowPaths: ["src/workflows", "src/jobs/billing.ts"],
+})
+```
+
+Defaults to `["src/workflows"]` when omitted. Directories are scanned recursively; individual file paths are read directly. See [Workflow Discovery](/vite/workflow-discovery) for the full list of supported export patterns.
+
+### `worker`
+
+Override the Worker entry module path when Sideffect cannot determine it from the Wrangler config automatically.
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  worker: "./src/index.ts",
+})
+```
+
+Use this if your Wrangler config lives at a non-standard location or does not have a `main` field.
+
+### `configPath`
+
+Path to the Wrangler config file when it is not located at the project root. This is forwarded directly to Cloudflare's Vite plugin and also used by Sideffect as the base directory for resolving workflow paths and writing the generated `sideffect-env.d.ts`.
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  configPath: "workers/api/wrangler.jsonc",
+})
+```
+
+### `persistState`
+
+Enable local state persistence during `wrangler dev`. Accepts a boolean or an object with a `path` string to control where state is stored.
+
+```ts
+// Enable with default Miniflare location
+withCloudflareWorkflows(cloudflare, {
+  persistState: true,
+})
+
+// Enable with a custom directory
+withCloudflareWorkflows(cloudflare, {
+  persistState: { path: ".wrangler/state" },
+})
+```
+
+### `inspectorPort`
+
+Port for the V8 inspector used when attaching a debugger to the Worker during development. Set to `false` to disable the inspector.
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  inspectorPort: 9229,
+})
+```
+
+### `config`
+
+A partial `WorkerConfig` object or a customizer function forwarded to the Cloudflare plugin's `config` hook. Use this to add extra Wrangler bindings, Durable Objects, migrations, or other Worker-level config alongside the workflow bindings Sideffect generates.
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  config: {
+    durable_objects: {
+      bindings: [{ name: "COUNTER", class_name: "Counter" }],
+    },
+    migrations: [{ tag: "v1", new_sqlite_classes: ["Counter"] }],
+  },
+})
+```
+
+The callback form receives the merged `WorkerConfig` and can return a partial override or mutate in place — the same contract as Cloudflare's own `config` option:
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  config: (workerConfig) => ({
+    name: workerConfig.name ?? "my-worker",
+  }),
+})
+```
+
+## Adding native workflow bindings
+
+If you have a Cloudflare Workflow that is **not** managed by Sideffect (for example, a workflow class you register manually), pass it through `config.workflows`. Sideffect merges your explicit entries with the ones it discovers automatically:
+
+```ts
+withCloudflareWorkflows(cloudflare, {
+  config: {
+    workflows: [
+      {
+        binding: "NATIVE_CHECK",
+        name: "native-check",
+        class_name: "NativeCheck",
+      },
+    ],
+  },
+  workflowPaths: ["src/workflows"],
+})
+```
+
+The `NativeCheck` class must still be exported from your Worker entry and registered with Wrangler in the usual way; Sideffect only passes the binding through without generating a layer for it.
+
+## TanStack Start example
+
+For full-stack frameworks that add their own Vite plugins (such as TanStack Start), you need to tell Sideffect which Vite environment corresponds to the Worker. Pass `viteEnvironment` with the environment name used by the framework (typically `"ssr"`), and spread `withCloudflareWorkflows` alongside the framework plugins:
+
+```ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import tailwindcss from "@tailwindcss/vite";
+import viteReact from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [
+    ...withCloudflareWorkflows(cloudflare, {
+      viteEnvironment: { name: "ssr" },
+      workflowPaths: [
+        "src/workflows/add-numbers.ts",
+        "src/workflows/billing.ts",
+      ],
+      config: {
+        durable_objects: {
+          bindings: [{ name: "COUNTER", class_name: "Counter" }],
+        },
+        migrations: [{ tag: "v1", new_sqlite_classes: ["Counter"] }],
+        workflows: [
+          { binding: "NATIVE_CHECK", name: "native-check", class_name: "NativeCheck" },
+        ],
+      },
+    }),
+    tailwindcss(),
+    tanstackStart(),
+    viteReact(),
+  ],
+});
+```
+
+The `viteEnvironment` option is forwarded unchanged to Cloudflare's plugin and tells it which Vite environment to treat as the SSR/Worker entry point.

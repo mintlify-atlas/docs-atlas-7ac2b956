@@ -1,0 +1,132 @@
+---
+title: "Error Handling and Non-Retryable Errors in Workflows"
+sidebarTitle: "Error Handling"
+description: "Throw NonRetryableError to stop Cloudflare Workflow retries immediately. Schema validation failures also become non-retryable errors automatically."
+---
+
+Cloudflare Workflows automatically retry failed steps according to their configured retry policy. This is the right behaviour for transient failures — a downstream service being temporarily unavailable, a network timeout, or a brief resource exhaustion. However, some failures should never be retried: bad input data will not become valid input on the next attempt, and retrying it wastes quota and delays the workflow from failing fast. Sideffect provides `NonRetryableError` as a portable, explicit way to signal that a step or workflow should stop immediately without retrying.
+
+## `NonRetryableError`
+
+`NonRetryableError` is a plain `Error` subclass exported from the `sideffect` package. Its `name` property is always `"NonRetryableError"`, which is the signal Cloudflare uses to identify non-retryable failures.
+
+```ts
+import { NonRetryableError } from "sideffect";
+
+throw new NonRetryableError("Invalid image key — workflow cannot proceed.");
+```
+
+You can throw it from a step's `run` function, from a workflow's `run` function, or from any code that runs inside either context.
+
+### Throwing `NonRetryableError` in a Step
+
+```ts
+import { Schema, Step, NonRetryableError } from "sideffect";
+
+const validateAndFetchStep = Step.make("validate and fetch", {
+  payload: Schema.Struct({ imageKey: Schema.String }),
+  result: Schema.Struct({ data: Schema.Uint8Array }),
+  run: async ({ imageKey }, ctx) => {
+    if (!imageKey.startsWith("uploads/")) {
+      throw new NonRetryableError(
+        `Invalid imageKey "${imageKey}": must be inside the uploads/ prefix.`,
+      );
+    }
+
+    const object = await ctx.env.BUCKET.get(imageKey);
+    if (!object) {
+      throw new NonRetryableError(
+        `Object "${imageKey}" does not exist in the bucket.`,
+      );
+    }
+
+    return { data: new Uint8Array(await object.arrayBuffer()) };
+  },
+});
+```
+
+In this example, a missing prefix or a missing object are permanent failures — there is no point retrying them. Throwing `NonRetryableError` communicates this intent explicitly.
+
+## Automatic Schema Validation Errors
+
+You do not always need to throw `NonRetryableError` manually. Sideffect automatically converts schema validation failures into non-retryable errors for both step payloads and step results.
+
+### Payload validation
+
+Before `run` is called, Sideffect decodes the payload using the step's `payload` schema. If decoding fails, a `NonRetryableError` is thrown with a message in this format:
+
+```
+Step "X" payload decoding failed because the value did not match its schema.
+The workflow will not retry this invalid input. Cause: ...
+```
+
+### Result validation
+
+After `run` returns, Sideffect decodes the result using the step's `result` schema. If decoding fails, a `NonRetryableError` is thrown with the same structure:
+
+```
+Step "X" result decoding failed because the value did not match its schema.
+The workflow will not retry this invalid input. Cause: ...
+```
+
+This means that once you define schemas, invalid data shapes are always treated as permanent failures — no additional error handling is required.
+
+## Cloudflare Native Conversion
+
+Sideffect's `NonRetryableError` is a portable class that does not depend on Cloudflare's runtime. However, Cloudflare's Workflow runtime detects non-retryable failures by checking for its own `NonRetryableError` constructor. Sideffect's generated `WorkflowEntrypoint` classes automatically convert Sideffect's portable error to Cloudflare's native `NonRetryableError` at the entrypoint boundary, so the Cloudflare dashboard and Cloudflare's internal retry logic both see the correct error type.
+
+You never need to import Cloudflare's `NonRetryableError` yourself — Sideffect handles the conversion transparently.
+
+```ts
+// Sideffect's generated entrypoint (simplified)
+try {
+  await layer.run(workflowContext, sideffectStep);
+} catch (error) {
+  if (isSideffectNonRetryableError(error)) {
+    // Convert to Cloudflare's native NonRetryableError
+    throw toNativeNonRetryableError(error, NonRetryableError);
+  }
+  throw error;
+}
+```
+
+## When to Use `NonRetryableError`
+
+<Tip>
+  Use `NonRetryableError` when the failure is **deterministic** — the same input
+  will always produce the same failure, so retrying is wasteful. Leave ordinary
+  `Error` throws (or any rejection) for **transient** failures where a retry has
+  a reasonable chance of succeeding.
+
+  | Scenario | Recommendation |
+  | --- | --- |
+  | Invalid payload shape or missing required field | `NonRetryableError` — bad input won't fix itself |
+  | Referenced resource does not exist | `NonRetryableError` — it will still be missing on retry |
+  | Downstream API returned a 4xx client error | `NonRetryableError` — the request is permanently invalid |
+  | Downstream API returned a 5xx server error | Let it retry — the server may recover |
+  | Network timeout reaching an external service | Let it retry — connectivity may recover |
+  | R2 write temporarily unavailable | Let it retry — storage is eventually consistent |
+</Tip>
+
+## Import Reference
+
+```ts
+import { NonRetryableError } from "sideffect";
+```
+
+`NonRetryableError` is a named export from the main `sideffect` package. No separate import path is needed.
+
+<CardGroup cols={2}>
+  <Card title="Steps" icon="puzzle-piece" href="/concepts/steps">
+    Schema validation that auto-generates non-retryable errors.
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/concepts/workflows">
+    Compose steps into full workflow pipelines.
+  </Card>
+  <Card title="Rollback" icon="rotate-left" href="/concepts/rollback">
+    Attach compensation handlers to steps with Rollback.with().
+  </Card>
+  <Card title="Step Context" icon="circle-info" href="/concepts/step-context">
+    Access env bindings, retry counts, and step metadata inside a step.
+  </Card>
+</CardGroup>

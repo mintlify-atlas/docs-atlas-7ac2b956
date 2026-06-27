@@ -1,0 +1,116 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Sideffect",
+  "projectDescription": "A TypeScript library for building type-safe Cloudflare Workflows from composable typed steps, with a Vite plugin that auto-generates Wrangler bindings and environment types.",
+  "theme": "luma",
+  "primaryColor": "#F6821F",
+  "lightColor": "#FFF4EB",
+  "darkColor": "#C25C00",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/workflows",
+              "concepts/steps",
+              "concepts/rollback",
+              "concepts/step-context",
+              "concepts/error-handling"
+            ]
+          },
+          {
+            "group": "Vite Integration",
+            "pages": [
+              "vite/setup",
+              "vite/workflow-discovery",
+              "vite/generated-types"
+            ]
+          },
+          {
+            "group": "Manual Setup",
+            "pages": [
+              "manual/plain-wrangler",
+              "manual/workflow-entrypoints"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/workflow",
+              "api/step",
+              "api/rollback",
+              "api/schema",
+              "api/non-retryable-error"
+            ]
+          },
+          {
+            "group": "Vite API",
+            "pages": [
+              "api/with-cloudflare-workflows",
+              "api/create-sideffect-workflows-plugin"
+            ]
+          },
+          {
+            "group": "Cloudflare API",
+            "pages": [
+              "api/workflow-entrypoints",
+              "api/workflow-engine"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Composable typed steps with Effect Schema-backed payload and result validation",
+    "Vite plugin (withCloudflareWorkflows) auto-discovers workflow layers and generates Wrangler bindings and env types",
+    "Zero wrangler.toml/wrangler.jsonc editing required for workflow setup",
+    "Cloudflare-native runtime — generates real WorkflowEntrypoint subclasses, nothing emulated",
+    "Support for Effect.Effect return values alongside plain async/Promise in step and workflow run functions",
+    "Built-in rollback handler attachment via Rollback.with()",
+    "Static TypeScript AST-based workflow discovery (no runtime execution during build)",
+    "Manual WorkflowEntrypoints.make() adapter for plain Wrangler setups without Vite",
+    "Portable NonRetryableError converted to native Cloudflare error at the entrypoint boundary"
+  ],
+  "publicApiSurface": [
+    "Workflow.make(options) — creates a typed WorkflowDefinition",
+    "WorkflowDefinition.toLayer(run) — attaches a run implementation, producing a WorkflowLayer",
+    "Step.make(name, options) — creates a reusable typed StepDefinition",
+    "Rollback.with(handler, config?) — attaches a rollback handler to a StepDefinition via .pipe()",
+    "Schema — re-exported from effect for payload/result schema definitions",
+    "TaggedError — re-exported from effect/Data",
+    "NonRetryableError — portable non-retryable workflow error class",
+    "WorkflowEngine.make(exportName, layer, WorkflowEntrypoint, options) — internal runtime bridge",
+    "WorkflowEngine.run(layer, options) — runs a workflow layer with native Cloudflare event/step",
+    "withCloudflareWorkflows(cloudflare, options) — Vite plugin wrapper (sideffect/vite)",
+    "createSideffectWorkflowsPlugin(options) — low-level Vite plugin factory (sideffect/vite)",
+    "collectWorkflowEntries(patterns, baseDirectory) — discovers workflow layer exports (sideffect/vite)",
+    "WorkflowEntrypoints.make(entries) — creates named WorkflowEntrypoint exports (sideffect/cloudflare)",
+    "SideffectStep.do(step, payload, options?) — executes a typed step inside a workflow",
+    "SideffectStep.sleep(name, duration) — pauses workflow execution",
+    "SideffectStep.sleepUntil(name, timestamp) — pauses until a timestamp",
+    "SideffectStep.waitForEvent(name, options) — waits for a named external event"
+  ]
+}

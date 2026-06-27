@@ -1,0 +1,48 @@
+---
+title: "Sideffect: Composable Typed Cloudflare Workflows"
+sidebarTitle: "Introduction"
+description: "Sideffect is a TypeScript library that builds Cloudflare Workflows from typed steps, with a Vite plugin that auto-generates Wrangler bindings and env types."
+---
+
+Sideffect lets you define Cloudflare Workflows as composable, schema-backed steps written in TypeScript — and then gets out of your way. Instead of hand-maintaining `wrangler.toml` workflow entries and casting untyped step payloads, you describe each activity once with `Step.make`, compose them into a `Workflow`, and let the Vite plugin discover your files, generate the native `WorkflowEntrypoint` classes, and inject the correct Wrangler bindings and `Env` types automatically. The result is a fully Cloudflare-native workflow with end-to-end type safety and zero boilerplate config.
+
+<Warning>
+  The Sideffect API is experimental and subject to change between releases.
+</Warning>
+
+## What Sideffect Provides
+
+Sideffect ships three entry points, each with a distinct responsibility:
+
+| Import path | Purpose |
+|---|---|
+| `sideffect` | Core library — `Workflow`, `Step`, `Schema`, `Rollback`, and related types. |
+| `sideffect/vite` | Vite plugin adapter — wraps `@cloudflare/vite-plugin` to auto-discover workflow layers and generate bindings. |
+| `sideffect/cloudflare` | Manual adapter — exposes `WorkflowEntrypoints.make` for projects that use plain Wrangler without Vite. |
+
+## Key Benefits
+
+**Reusable typed steps** — Each step is defined once with an explicit payload schema and result schema. Steps are plain values; share them across workflows or across packages without any runtime overhead.
+
+**No manual Wrangler config** — The `sideffect/vite` plugin performs static TypeScript AST analysis over your workflow files at build time. It discovers every exported workflow layer and writes the `workflows` binding block into the Vite build output so your source `wrangler.jsonc` stays clean.
+
+**Use bindings as normal** — The generated `Env` types include your workflow bindings alongside every other Cloudflare binding. Call `env.MY_WORKFLOW.create(...)` exactly as you would with any hand-configured workflow — Sideffect doesn't introduce a new runtime API for triggering workflows.
+
+**Cloudflare-native runtime** — Sideffect generates real `WorkflowEntrypoint` subclasses. Nothing is emulated or polyfilled; Cloudflare's own Workflows runtime drives execution, retries, sleep, and `waitForEvent`.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="package" href="/installation">
+    Add Sideffect and its peer dependencies to your Cloudflare Worker project.
+  </Card>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Build a working typed workflow from scratch in five minutes.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/concepts/workflows">
+    Understand workflows, steps, schemas, and the Vite plugin in depth.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/workflow">
+    Full reference for `Workflow`, `Step`, `Rollback`, and `WorkflowEntrypoints`.
+  </Card>
+</CardGroup>

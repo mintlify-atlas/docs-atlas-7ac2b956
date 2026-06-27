@@ -1,0 +1,171 @@
+---
+title: "Rollback API Reference"
+sidebarTitle: "Rollback"
+description: "API reference for Rollback.with(). Attaches a Cloudflare-native rollback handler and optional step config to a Sideffect StepDefinition."
+---
+
+`Rollback` is used to attach compensation logic to a step definition. When Cloudflare Workflows determines that a workflow must be rolled back, it calls each registered rollback handler in reverse order. Sideffect forwards your handler and the optional rollback step config to Cloudflare's native step rollback mechanism — Cloudflare owns the execution and ordering. Import `Rollback` directly from `sideffect`.
+
+```ts
+import { Rollback } from "sideffect";
+```
+
+---
+
+## `Rollback.with(handler, config?)`
+
+Returns a function `(step: StepDefinition) => StepDefinition` that attaches a rollback handler to a step definition. It is designed to be used with the `.pipe()` method on `StepDefinition`.
+
+<ParamField path="handler" type="RollbackHandler<Payload, Result, Env>" required>
+  The compensation function called by Cloudflare when rollback is triggered for
+  this step. Receives:
+
+  - `result: Result | undefined` — the step's output value, or `undefined` if
+    no output was recorded before the failure.
+  - `context: RollbackContext<Payload, Result, Env>` — contextual data
+    including the original payload, the failure, and env bindings. See
+    [RollbackContext properties](#rollbackcontext-properties) below.
+
+  May be a synchronous function, an `async` function, or return an
+  `Effect.Effect`.
+</ParamField>
+
+<ParamField path="config" type="WorkflowStepConfig">
+  Optional Cloudflare step configuration for the rollback step itself. Accepts
+  the same shape as the `retries` and `timeout` fields in `StepOptions`:
+
+  ```ts
+  {
+    retries?: {
+      limit: number;
+      delay: string | number;
+      backoff?: "constant" | "linear" | "exponential";
+    };
+    timeout?: string | number;
+  }
+  ```
+</ParamField>
+
+**Returns** a function `(step: StepDefinition<Payload, Result, Env>) => StepDefinition<Payload, Result, Env>` — the same step definition with the rollback handler attached.
+
+---
+
+## `RollbackContext` properties
+
+The second argument to every rollback `handler`.
+
+<ResponseField name="payload" type="Payload">
+  The original decoded payload that was passed to the step when it ran.
+</ResponseField>
+
+<ResponseField name="result" type="Result | undefined">
+  The step output value, as decoded by the step's `result` schema. May be
+  `undefined` if Cloudflare did not record an output before the failure
+  occurred.
+</ResponseField>
+
+<ResponseField name="failure" type="unknown">
+  The error or value that caused Cloudflare to invoke rollback for this step.
+</ResponseField>
+
+<ResponseField name="env" type="Env">
+  Worker environment bindings from the `WorkflowEntrypoint` instance. Typed
+  from your project's `Cloudflare.Env`.
+</ResponseField>
+
+<ResponseField name="ctx" type="unknown">
+  Worker execution context from the `WorkflowEntrypoint` instance.
+</ResponseField>
+
+<ResponseField name="workflowStep" type="NativeWorkflowStep">
+  The raw Cloudflare `WorkflowStep` API object. Available for advanced use
+  cases that require calling the native step API directly inside a rollback
+  handler.
+</ResponseField>
+
+<ResponseField name="native" type="WorkflowRollbackContext<Result>">
+  The raw `WorkflowRollbackContext` provided by Cloudflare. Use this to access
+  any Cloudflare-native rollback fields that Sideffect does not surface
+  directly.
+</ResponseField>
+
+---
+
+## Usage with `.pipe()`
+
+The idiomatic way to attach a rollback handler is with the `.pipe()` method on any `StepDefinition`. This keeps the step logic and its compensation logic co-located:
+
+```ts
+import { Rollback, Schema, Step } from "sideffect";
+
+const publishImageStep = Step.make("publish image", {
+  payload: Schema.Struct({ imageKey: Schema.String, imageData: Schema.Uint8Array }),
+  result: Schema.Void,
+  run: async ({ imageKey, imageData }, ctx) => {
+    await ctx.env.BUCKET.put(`public/${imageKey}`, imageData);
+  },
+}).pipe(
+  Rollback.with((_result, ctx) => {
+    return ctx.env.BUCKET.delete(`public/${ctx.payload.imageKey}`);
+  }),
+);
+```
+
+In this example, if the workflow rolls back after `publishImageStep` has already run, Cloudflare will call the rollback handler and delete the previously uploaded object.
+
+---
+
+## Rollback with step config
+
+You can pass a `WorkflowStepConfig` as the second argument to configure how Cloudflare executes the rollback step itself (retries, timeout):
+
+```ts
+import { Rollback, Schema, Step } from "sideffect";
+
+const stepWithRollback = Step.make("step with rollback config", {
+  payload: Schema.String,
+  result: Schema.String,
+  run: (value) => value,
+}).pipe(
+  Rollback.with(
+    (result, context) => {
+      console.log("rolling back with result:", result);
+      console.log("failure was:", context.failure);
+    },
+    {
+      retries: { limit: 3, delay: "15 seconds", backoff: "linear" },
+      timeout: "2 minutes",
+    },
+  ),
+);
+```
+
+---
+
+## Composing `Rollback.with` manually
+
+`Rollback.with` returns a plain function, so you can also call it independently of `.pipe()` when you need to apply rollback programmatically:
+
+```ts
+import { Rollback } from "sideffect";
+
+const addRollback = Rollback.with((_result, ctx) => {
+  console.log("rolling back:", ctx.payload);
+});
+
+const stepWithRollback = addRollback(myStepDefinition);
+```
+
+<Warning>
+  Rollback execution is fully owned by Cloudflare. Sideffect registers your
+  handler with the native rollback system but does not control when or whether
+  rollback is invoked. Refer to the
+  [Cloudflare Workflows documentation](https://developers.cloudflare.com/workflows/)
+  for details on rollback ordering and guarantees.
+</Warning>
+
+<Note>
+  A step that uses `.pipe(Rollback.with(...))` is a new `StepDefinition` value.
+  The original step definition is not mutated. This means you can safely define
+  a base step and create rollback variants of it for different workflows.
+</Note>

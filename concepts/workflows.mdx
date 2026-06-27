@@ -1,0 +1,185 @@
+---
+title: "Workflows: Defining Typed Cloudflare Workflow Pipelines"
+sidebarTitle: "Workflows"
+description: "Learn how Sideffect workflows are defined with Workflow.make() and composed into executable WorkflowLayers using toLayer()."
+---
+
+A **workflow** in Sideffect is a named, typed pipeline that executes a sequence of steps inside Cloudflare's durable Workflow runtime. You define the shape of the incoming payload once with `Workflow.make()`, producing a `WorkflowDefinition`. You then attach the execution logic by calling `.toLayer(run)`, which produces a `WorkflowLayer` — the runnable unit that Sideffect registers with Cloudflare.
+
+## Creating a Workflow Definition
+
+`Workflow.make()` accepts a `name` and a `payload` Effect Schema. The name is the canonical identifier that Cloudflare and Sideffect use to refer to the workflow.
+
+```ts
+import { Schema, Workflow } from "sideffect";
+
+const addNumbers = Workflow.make({
+  name: "add-numbers",
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+});
+```
+
+<Note>
+  The workflow `name` drives an automatic naming convention throughout Sideffect
+  and Cloudflare. A name of `add-numbers` produces a PascalCase class name
+  (`AddNumbers`) for the generated `WorkflowEntrypoint`, and a
+  SCREAMING\_SNAKE\_CASE binding name (`ADD_NUMBERS`) that appears on `env`. You
+  never need to configure these manually when using the Vite adapter.
+</Note>
+
+## Attaching an Implementation with `toLayer`
+
+Call `.toLayer(run)` on a `WorkflowDefinition` to bind it to an implementation. The `run` function receives two arguments:
+
+- A **`WorkflowContext`** object with `payload`, `event`, `env`, and `ctx`.
+- A **`SideffectStep`** façade that wraps Cloudflare's native step API with typed, schema-validated step execution.
+
+```ts
+export const addNumbersLayer = addNumbers.toLayer(async ({ payload }, step) => {
+  const sum      = await step.do(addNumbers,     payload);
+  const doubled  = await step.do(multiplyNumber, { value: sum, by: 2 });
+  const formatted = await step.do(formatNumber,  doubled);
+
+  return { sum, doubled, formatted };
+});
+```
+
+The object returned from `run` becomes the workflow result. `WorkflowContext` is typed over both the decoded payload and your `Cloudflare.Env`, so every property is fully type-safe.
+
+## Complete Example — `add-numbers`
+
+The following workflow (taken directly from the Sideffect workbench) chains three steps: arithmetic addition, multiplication, and string formatting.
+
+```ts
+import { Schema, Workflow } from "sideffect";
+import { addNumbers, multiplyNumber, formatNumber } from "./steps";
+
+export const addNumbersLayer = Workflow.make({
+  name: "add-numbers",
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+}).toLayer(async ({ payload }, step) => {
+  const sum       = await step.do(addNumbers,     payload);
+  const doubled   = await step.do(multiplyNumber, { value: sum, by: 2 });
+  const formatted = await step.do(formatNumber,   doubled);
+
+  return { sum, doubled, formatted };
+});
+```
+
+Each `step.do()` call is individually durable — Cloudflare checkpoints the result before moving to the next step.
+
+## Pausing Execution with `step.sleep`
+
+`step.sleep(name, duration)` suspends the workflow for a given duration. The `name` is used for checkpointing and must be unique within the workflow run. Duration can be a Cloudflare duration string (e.g. `"1 second"`, `"24 hours"`) or a millisecond count.
+
+```ts
+export const pauseAndReturnLayer = Workflow.make({
+  name: "pause-and-return",
+  payload: Schema.Struct({ marker: Schema.String }),
+}).toLayer(async ({ payload }, step) => {
+  await step.sleep("pause briefly", "1 second");
+
+  return step.do(sleepMarker, payload);
+});
+```
+
+## Sleeping Until a Timestamp with `step.sleepUntil`
+
+`step.sleepUntil(name, timestamp)` pauses the workflow until an absolute point in time. The timestamp can be a `Date` object or a Unix timestamp in milliseconds.
+
+```ts
+export const scheduledLayer = Workflow.make({
+  name: "scheduled-job",
+  payload: Schema.Struct({ runAt: Schema.Number }),
+}).toLayer(async ({ payload }, step) => {
+  await step.sleepUntil("wait for scheduled time", new Date(payload.runAt));
+
+  return step.do(runScheduledTask, payload);
+});
+```
+
+## Waiting for an External Event with `step.waitForEvent`
+
+`step.waitForEvent(name, { type, timeout })` suspends the workflow until Cloudflare delivers an event of the given type. The optional `timeout` prevents the workflow from waiting indefinitely.
+
+```ts
+export const approvalLayer = Workflow.make({
+  name: "image-processing",
+  payload: Schema.Struct({ imageKey: Schema.String }),
+}).toLayer(async ({ payload }, step) => {
+  const image       = await step.do(fetchImageStep,       { imageKey: payload.imageKey });
+  const description = await step.do(generateDescriptionStep, { imageData: image.data });
+
+  await step.sleep("wait briefly", "1 second");
+
+  await step.waitForEvent("await approval", { type: "approved", timeout: "24 hours" });
+
+  await step.do(publishImageStep, {
+    imageKey: payload.imageKey,
+    imageData: image.data,
+  });
+
+  return description;
+});
+```
+
+## Using Effect in the `run` Function
+
+The `run` function may return a plain value, a `Promise`, or an `Effect.Effect`. If you prefer Effect's structured concurrency model, you can write the entire workflow as a generator using `Effect.fn`:
+
+```ts
+import { Effect } from "effect";
+import { Schema, Workflow } from "sideffect";
+import { effectUppercase } from "./steps";
+
+export const effectWrappedLayer = Workflow.make({
+  name: "effect-wrapped",
+  payload: Schema.Struct({ message: Schema.String }),
+}).toLayer(
+  Effect.fn(function* ({ payload }, step) {
+    const upper = yield* Effect.promise(() =>
+      step.do(effectUppercase, payload.message),
+    );
+
+    return { upper };
+  }),
+);
+```
+
+<Tip>
+  You do not need to use Effect to use Sideffect. Plain `async`/`await` functions
+  work exactly the same way. Effect support is purely opt-in.
+</Tip>
+
+## The `WorkflowContext` Object
+
+| Property  | Type                           | Description                                                      |
+| --------- | ------------------------------ | ---------------------------------------------------------------- |
+| `payload` | `Payload`                      | Decoded workflow event payload validated against the payload schema. |
+| `event`   | `WorkflowEvent<Payload>`       | Original Cloudflare event metadata with the decoded payload attached. |
+| `env`     | `Env`                          | Worker environment bindings from the `WorkflowEntrypoint` instance. |
+| `ctx`     | `unknown`                      | Worker execution context from the `WorkflowEntrypoint` instance. |
+
+## The `SideffectStep` Façade
+
+| Method                               | Description                                                         |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| `step.do(step, payload, options?)`   | Runs a typed Sideffect step with schema validation.                 |
+| `step.sleep(name, duration)`         | Pauses the workflow for a duration string or millisecond count.     |
+| `step.sleepUntil(name, timestamp)`   | Pauses the workflow until a `Date` or Unix timestamp.               |
+| `step.waitForEvent(name, options)`   | Suspends until Cloudflare delivers an event of the given type.      |
+
+<CardGroup cols={2}>
+  <Card title="Steps" icon="puzzle-piece" href="/concepts/steps">
+    Define reusable, schema-validated workflow activities.
+  </Card>
+  <Card title="Rollback" icon="rotate-left" href="/concepts/rollback">
+    Attach compensation handlers to steps with Rollback.with().
+  </Card>
+  <Card title="Step Context" icon="circle-info" href="/concepts/step-context">
+    Access env bindings, retry counts, and step metadata inside a step.
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Throw NonRetryableError to stop retries immediately.
+  </Card>
+</CardGroup>

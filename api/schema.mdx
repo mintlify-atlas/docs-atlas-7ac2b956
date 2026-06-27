@@ -1,0 +1,123 @@
+---
+title: "Schema and TaggedError Re-exports"
+sidebarTitle: "Schema"
+description: "Sideffect re-exports Schema from the effect library and TaggedError from effect/Data for use in workflow step payload and result definitions."
+---
+
+`Schema` and `TaggedError` are re-exported from Sideffect for convenience so users do not need to install or import from the `effect` package directly. Every schema you need to describe workflow payloads, step inputs, and step outputs is available through this single import.
+
+```ts
+import { Schema, TaggedError } from "sideffect";
+```
+
+---
+
+## `Schema`
+
+`Schema` is the full `Schema` namespace re-exported from the [`effect`](https://effect.website/) library. You use it to describe the shape of workflow payloads and step inputs and outputs. Sideffect passes every payload and result through `Schema.decodeUnknownSync` at runtime, so schemas must be decodable from unknown values (as all built-in schemas are).
+
+### Primitive schemas
+
+| Schema | TypeScript type | Notes |
+|---|---|---|
+| `Schema.String` | `string` | |
+| `Schema.Number` | `number` | |
+| `Schema.Boolean` | `boolean` | |
+| `Schema.Void` | `void` | Useful for steps that return nothing |
+| `Schema.Uint8Array` | `Uint8Array` | For binary payloads such as image data |
+
+### Composite schemas
+
+**`Schema.Struct({ ... })`** — Describes a plain object with named fields:
+
+```ts
+const ImagePayload = Schema.Struct({
+  imageKey: Schema.String,
+  width: Schema.Number,
+  lossless: Schema.Boolean,
+});
+// TypeScript type: { readonly imageKey: string; readonly width: number; readonly lossless: boolean }
+```
+
+**`Schema.Array(innerSchema)`** — Describes an array of values that all conform to `innerSchema`:
+
+```ts
+const Tags = Schema.Array(Schema.String);
+// TypeScript type: readonly string[]
+```
+
+### Transformation schemas
+
+**`Schema.NumberFromString`** — Decodes a `string` and parses it into a `number`. This is particularly useful when your workflow's event payload arrives from an HTTP request or a queue message where numeric values are serialized as strings:
+
+```ts
+import { Schema, Workflow } from "sideffect";
+
+const payloadDecodingWorkflow = Workflow.make({
+  name: "payload-decoding",
+  payload: Schema.Struct({ value: Schema.NumberFromString }),
+});
+
+// The raw Cloudflare event carries { value: "42" } (a string).
+// After decoding, workflow.payload.value is the number 42.
+export const payloadDecodingLayer = payloadDecodingWorkflow.toLayer(
+  async (workflow, step) => {
+    console.log(typeof workflow.payload.value); // "number"
+    console.log(workflow.event.payload.value);  // "42" (original string, pre-decode)
+  },
+);
+```
+
+---
+
+## `TaggedError`
+
+`TaggedError` is re-exported from `effect/Data`. It is a base class for creating typed, discriminated error classes. Using tagged errors makes it straightforward to handle specific failure cases in `Effect`-based step implementations.
+
+### Defining a custom tagged error
+
+```ts
+import { TaggedError } from "sideffect";
+
+class UserNotFoundError extends TaggedError("UserNotFoundError")<{
+  readonly userId: string;
+}> {}
+
+class QuotaExceededError extends TaggedError("QuotaExceededError")<{
+  readonly limit: number;
+  readonly current: number;
+}> {}
+```
+
+### Using tagged errors in a step
+
+```ts
+import { Effect } from "effect";
+import { Schema, Step, TaggedError } from "sideffect";
+
+class UserNotFoundError extends TaggedError("UserNotFoundError")<{
+  readonly userId: string;
+}> {}
+
+const fetchUser = Step.make("fetch user", {
+  payload: Schema.Struct({ userId: Schema.String }),
+  result: Schema.Struct({ name: Schema.String, email: Schema.String }),
+  run: ({ userId }, ctx) =>
+    Effect.gen(function* () {
+      const user = yield* Effect.tryPromise(() => ctx.env.DB.get(userId));
+
+      if (!user) {
+        yield* Effect.fail(new UserNotFoundError({ userId }));
+      }
+
+      return user;
+    }),
+});
+```
+
+<Info>
+  `Schema` is the complete namespace from the `effect` library — only the most
+  commonly used schemas in Sideffect patterns are listed above. For the full
+  API including transformations, filters, branded types, and more, see the
+  [Effect Schema documentation](https://effect.website/docs/schema/introduction).
+</Info>

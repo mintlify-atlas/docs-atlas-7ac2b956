@@ -1,47 +1,118 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Sideffect in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Build a complete Cloudflare Workflow with typed steps using Sideffect. From step definition to Worker binding in five steps."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+By the end of this guide you will have a fully typed Cloudflare Workflow — a step that adds two numbers — running locally with the Vite dev server. The workflow will be auto-discovered by the Sideffect Vite plugin, which means no `wrangler.jsonc` changes are needed: the binding `ADD_NUMBERS` will appear on your `env` object and be ready to call from your Worker's `fetch` handler.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+### Define a step
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+Create `src/workflows/add-numbers.ts` and define the `addNumbers` step. `Step.make` takes a human-readable name and a definition object with a `payload` schema, a `result` schema, and a `run` function.
 
-    ```bash
-    your-cli start
-    ```
-  </Step>
-</Steps>
+```ts src/workflows/add-numbers.ts
+import { Schema, Step, Workflow } from "sideffect";
+
+export const addNumbers = Step.make("add numbers", {
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+  result: Schema.Number,
+  run: ({ left, right }) => left + right,
+});
+```
+
+The schemas serve a dual purpose: they document the contract of the step and they validate payloads at the boundaries of workflow execution. The `run` function may return a plain value, a `Promise`, or an Effect.
+
+### Create a workflow
+
+In the same file, construct a `Workflow` with a `name` and a `payload` schema, then call `.toLayer()` to wire steps together into the workflow body.
+
+```ts src/workflows/add-numbers.ts
+import { Schema, Step, Workflow } from "sideffect";
+
+export const addNumbers = Step.make("add numbers", {
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+  result: Schema.Number,
+  run: ({ left, right }) => left + right,
+});
+
+export const addNumbersLayer = Workflow.make({
+  name: "add-numbers",
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+}).toLayer(async ({ payload }, step) => {
+  const sum = await step.do(addNumbers, payload);
+
+  return { sum };
+});
+```
+
+`step.do` executes a step inside Cloudflare's durable step runtime — providing automatic retries, checkpointing, and replay safety. The result is fully typed based on the `result` schema you provided.
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  The workflow `name` drives the auto-generated binding name. Sideffect converts `"add-numbers"` to `ADD_NUMBERS` as the Wrangler binding and to `AddNumbers` as the `WorkflowEntrypoint` class name. No configuration is required.
 </Tip>
+
+### Configure Vite
+
+Add the Sideffect plugin to your Vite config by wrapping the Cloudflare plugin with `withCloudflareWorkflows`. Point `workflowPaths` at the directory containing your workflow files.
+
+```ts vite.config.ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [
+    ...withCloudflareWorkflows(cloudflare, {
+      workflowPaths: ["src/workflows"],
+    }),
+  ],
+});
+```
+
+At dev and build time, Sideffect statically analyses the files in `src/workflows`, discovers every exported workflow layer, and injects the matching `workflows` binding block into the build output. Your `wrangler.jsonc` requires no `workflows` field.
+
+<Note>
+  `src/workflows` is the default scan path used when `workflowPaths` is omitted. Customise it — or supply multiple paths — by passing a `workflowPaths` array as shown above.
+</Note>
+
+### Use the binding in your Worker
+
+Workflow bindings appear on `env` like any other Cloudflare binding. Trigger the `add-numbers` workflow from your Worker's `fetch` handler using `env.ADD_NUMBERS.create`:
+
+```ts src/index.ts
+export default {
+  async fetch(_req: Request, env: Env): Promise<Response> {
+    const instance = await env.ADD_NUMBERS.create({
+      params: { left: 2, right: 3 },
+    });
+
+    return Response.json({ id: instance.id });
+  },
+};
+```
+
+`env.ADD_NUMBERS` is typed from the generated `Env` types that the Vite plugin produces — no manual `declare` statements needed.
+
+### Run the dev server
+
+Start the local development server. Sideffect's Vite plugin runs its workflow discovery step before Wrangler boots, so your workflow is registered and reachable immediately.
+
+```bash
+vite dev
+```
+
+Or use Wrangler directly if you have it configured as the dev server:
+
+```bash
+wrangler dev
+```
+
+Visit your Worker's local URL and trigger the workflow. You should receive a JSON response containing the workflow instance `id`.
+
+</Steps>
+
+## What's Next
+
+Now that you have a working workflow, explore the rest of the documentation to learn about step context, rollback handlers, `step.sleep`, `step.waitForEvent`, and the manual Wrangler adapter for projects without Vite.

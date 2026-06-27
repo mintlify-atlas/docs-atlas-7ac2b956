@@ -1,0 +1,148 @@
+---
+title: "WorkflowEntrypoints API Reference"
+sidebarTitle: "WorkflowEntrypoints"
+description: "API reference for WorkflowEntrypoints.make(). Converts Sideffect WorkflowLayers into named Cloudflare WorkflowEntrypoint subclass exports."
+---
+
+`WorkflowEntrypoints` is the Cloudflare-specific adapter that converts Sideffect `WorkflowLayer` values into native Cloudflare `WorkflowEntrypoint` subclass constructors. Use it in a plain Cloudflare Worker — without Vite — when you want to wire up Sideffect workflows manually. Import it from `sideffect/cloudflare`.
+
+<Tip>
+  If you are using Vite, you do not need to call `WorkflowEntrypoints.make()` yourself.
+  `withCloudflareWorkflows()` generates a virtual entry module that calls it automatically for
+  every discovered layer. See the [`withCloudflareWorkflows` API reference](/api/with-cloudflare-workflows)
+  for the automatic Vite integration.
+</Tip>
+
+## `WorkflowEntrypoints.make()`
+
+### Function signature
+
+```ts
+WorkflowEntrypoints.make<Entries extends WorkflowLayerEntries>(
+  entries: Entries
+): { readonly [K in keyof Entries]: WorkflowEntrypointConstructor }
+```
+
+### Parameters
+
+<ParamField path="entries" type="WorkflowLayerEntries" required>
+  A plain object whose keys are `class_name` strings — the Cloudflare Workflow class names that
+  appear in your Wrangler config — and whose values are `WorkflowLayer` instances created by
+  `Workflow.make(...).toLayer(...)`.
+
+  Each key becomes a named export that Cloudflare's runtime uses to route incoming workflow
+  invocations. Keys must be valid JavaScript identifiers (the same rule Cloudflare enforces for
+  `WorkflowEntrypoint` class names in Wrangler config).
+
+  ```ts
+  {
+    ResizeImage: resizeImageLayer,
+    SendWelcomeEmail: sendWelcomeEmailLayer,
+  }
+  ```
+</ParamField>
+
+### Return value
+
+<ResponseField name="entrypoints" type="object">
+  An object with the same keys as `entries`. Each value is a `WorkflowEntrypoint` subclass
+  constructor. Destructure and export the keys whose names match the `class_name` values in your
+  Wrangler workflow bindings.
+
+  ```ts
+  export const { ResizeImage } = WorkflowEntrypoints.make({ ResizeImage: resizeImageLayer });
+  ```
+</ResponseField>
+
+### Validation
+
+`WorkflowEntrypoints.make()` validates every entry before returning and throws synchronously on the
+first violation:
+
+1. **Invalid `class_name` identifier** — if a key is not a valid JavaScript identifier (tested
+   against `/^[$A-Z_a-z][$\w]*$/`), a `TypeError` is thrown:
+
+   ```
+   TypeError: Invalid Cloudflare Workflow class_name "resize-image". Sideffect generates a named
+   JavaScript export for each workflow, so class_name must be a valid identifier such as
+   "ResizeImage". Update the Wrangler workflow class_name and the matching Worker export.
+   ```
+
+2. **Value is not a `WorkflowLayer`** — if a value does not have `_tag === "WorkflowLayer"`, a
+   `TypeError` is thrown:
+
+   ```
+   TypeError: Expected Worker export "ResizeImage" to be a Sideffect WorkflowLayer. Export a layer
+   with the same name as the Wrangler workflow class_name, for example:
+   export { resizeImageWorkflowLayer as ResizeImage } from "./workflows/resize-image".
+   ```
+
+## Examples
+
+### Single workflow
+
+```ts
+import { WorkflowEntrypoints } from "sideffect/cloudflare";
+import { resizeImageLayer } from "./workflows/resize-image";
+
+export const { ResizeImage } = WorkflowEntrypoints.make({
+  ResizeImage: resizeImageLayer,
+});
+```
+
+Your `wrangler.toml` should have a matching binding:
+
+```toml
+[[workflows]]
+binding = "RESIZE_IMAGE"
+name    = "resize-image"
+class_name = "ResizeImage"
+```
+
+### Multiple workflows
+
+```ts
+import { WorkflowEntrypoints } from "sideffect/cloudflare";
+import { resizeImageLayer } from "./workflows/resize-image";
+import { sendWelcomeEmailLayer } from "./workflows/send-welcome-email";
+
+export const { ResizeImage, SendWelcomeEmail } = WorkflowEntrypoints.make({
+  ResizeImage: resizeImageLayer,
+  SendWelcomeEmail: sendWelcomeEmailLayer,
+});
+```
+
+### Re-exporting with a different local name
+
+When your layer variable name differs from the required `class_name`, rename it at the export site
+rather than renaming the layer itself:
+
+```ts
+import { WorkflowEntrypoints } from "sideffect/cloudflare";
+import { imageResizeWorkflowLayer } from "./workflows/resize-image";
+
+export const { ResizeImage } = WorkflowEntrypoints.make({
+  ResizeImage: imageResizeWorkflowLayer,
+});
+```
+
+## Runtime behaviour
+
+At workflow invocation time Cloudflare calls the `run(event, step)` method on the generated
+`WorkflowEntrypoint` subclass. Internally the generated class delegates to
+`WorkflowEngine.run()`, which:
+
+1. **Decodes the payload** — runs the workflow's `payloadSchema` against `event.payload`. If
+   decoding fails the error is converted to a `NonRetryableError` so Cloudflare does not retry the
+   workflow with a payload it cannot parse.
+
+2. **Creates a `SideffectStep` façade** — wraps Cloudflare's native `step` object with typed
+   `step.do()`, `step.sleep()`, `step.sleepUntil()`, and `step.waitForEvent()` methods that handle
+   payload/result schema decoding for each step.
+
+3. **Calls the layer's `run` function** — passes the decoded payload, the `WorkflowContext`
+   (containing `env` and `ctx`), and the `SideffectStep` façade.
+
+4. **Converts `NonRetryableError`** — if the layer's `run` function throws a Sideffect
+   `NonRetryableError`, it is re-thrown as the native Cloudflare `NonRetryableError` from
+   `cloudflare:workflows` so the platform stops retrying immediately.

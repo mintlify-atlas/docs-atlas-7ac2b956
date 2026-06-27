@@ -1,20 +1,79 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "Sideffect: Type-Safe Cloudflare Workflows with Zero Config"
+sidebarTitle: "Home"
+description: "Sideffect lets you build Cloudflare Workflows from composable typed steps and auto-generates Wrangler bindings and env types via a Vite plugin."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Sideffect is a TypeScript library for building [Cloudflare Workflows](https://developers.cloudflare.com/workflows/) from composable, schema-validated steps. A Vite plugin discovers your workflow files at build time and automatically writes Wrangler bindings and TypeScript environment types — so you never touch `wrangler.toml` or `wrangler.jsonc` for workflow setup.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<Warning>
+  The Sideffect API is experimental and subject to change before a stable release.
+</Warning>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Installation" icon="box" href="/installation">
+    Install Sideffect and its peer dependencies in your Cloudflare Worker project.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first typed Cloudflare Workflow with steps in under five minutes.
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/workflows">
+    Understand workflows, steps, rollback handlers, and the Effect-style API.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/workflow">
+    Explore every exported function, class, and type in the public API.
+  </Card>
+</CardGroup>
+
+## Why Sideffect?
+
+<CardGroup cols={2}>
+  <Card title="Typed Steps" icon="shield-check">
+    Define workflow steps with Effect Schema-validated payloads and results. Schema failures become non-retryable errors automatically.
+  </Card>
+  <Card title="Zero Wrangler Config" icon="wand-magic-sparkles">
+    The Vite plugin discovers `WorkflowLayer` exports using static TypeScript AST analysis and injects bindings into the build — no `wrangler.jsonc` edits needed.
+  </Card>
+  <Card title="Native Cloudflare Runtime" icon="cloud">
+    Sideffect generates real `WorkflowEntrypoint` subclasses. Nothing is emulated — your workflow runs exactly as if you wrote it by hand.
+  </Card>
+  <Card title="Effect-Style Composition" icon="layer-group">
+    Step and workflow `run` functions can return plain values, Promises, or `Effect.Effect` — mix and match without adapters.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+<Steps>
+  <Step title="Define typed steps">
+    Create reusable steps with `Step.make()`, providing payload and result schemas plus a `run` function.
+  </Step>
+  <Step title="Compose a workflow">
+    Use `Workflow.make()` to define the workflow name and payload schema, then attach a `run` implementation with `.toLayer()`.
+  </Step>
+  <Step title="Add the Vite plugin">
+    Wrap Cloudflare's Vite plugin with `withCloudflareWorkflows()`. Sideffect scans your workflow files and auto-configures all bindings.
+  </Step>
+  <Step title="Use bindings as normal">
+    Access workflow bindings on `env` like any other Cloudflare binding — `env.MY_WORKFLOW.create({ params })`.
+  </Step>
+</Steps>
+
+```ts
+import { Schema, Step, Workflow } from "sideffect";
+
+const greetStep = Step.make("greet", {
+  payload: Schema.Struct({ name: Schema.String }),
+  result: Schema.Struct({ message: Schema.String }),
+  run: ({ name }) => ({ message: `Hello, ${name}!` }),
+});
+
+const helloWorkflow = Workflow.make({
+  name: "hello-world",
+  payload: Schema.Struct({ name: Schema.String }),
+});
+
+export const helloWorldLayer = helloWorkflow.toLayer(async ({ payload }, step) => {
+  return step.do(greetStep, { name: payload.name });
+});
+```

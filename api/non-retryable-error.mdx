@@ -1,0 +1,108 @@
+---
+title: "NonRetryableError: Stop Workflow Retry on Fatal Errors"
+sidebarTitle: "NonRetryableError"
+description: "NonRetryableError is a portable error class that tells Cloudflare Workflows not to retry the current step or workflow on fatal or invalid-input failures."
+---
+
+`NonRetryableError` is imported from `sideffect`. When thrown from a step's `run` function or directly from a workflow's `run` function, it signals that the failure is permanent — Cloudflare should mark the workflow as failed and must not attempt to retry it.
+
+```ts
+import { NonRetryableError } from "sideffect";
+```
+
+---
+
+## Class definition
+
+```ts
+class NonRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NonRetryableError";
+  }
+}
+```
+
+The constructor sets `this.name` to `"NonRetryableError"` and `this.message` to the provided string. No additional properties or methods are added.
+
+---
+
+## Constructor
+
+<ParamField path="message" type="string" required>
+  A human-readable description of why this failure is permanent. This message
+  appears in Cloudflare Workflows logs and dashboard.
+</ParamField>
+
+---
+
+## Basic usage
+
+```ts
+import { NonRetryableError } from "sideffect";
+
+throw new NonRetryableError("User not found — cannot retry this workflow");
+```
+
+Inside a step:
+
+```ts
+import { NonRetryableError, Schema, Step } from "sideffect";
+
+const fetchUser = Step.make("fetch user", {
+  payload: Schema.Struct({ userId: Schema.String }),
+  result: Schema.Struct({ name: Schema.String }),
+  run: async ({ userId }, ctx) => {
+    const user = await ctx.env.DB.get(userId);
+
+    if (!user) {
+      throw new NonRetryableError(`User ${userId} not found — cannot retry this workflow`);
+    }
+
+    return user;
+  },
+});
+```
+
+---
+
+## How Sideffect handles `NonRetryableError`
+
+Sideffect's generated `WorkflowEntrypoint` classes (produced by `WorkflowEntrypoints.make()` or the Vite plugin) wrap your workflow `run` function. When the run function throws, the generated entrypoint checks whether the error is a Sideffect `NonRetryableError`. If it is, the entrypoint re-throws it as Cloudflare's own native `NonRetryableError`, which tells the Cloudflare Workflows runtime to mark the workflow as permanently failed without scheduling another retry.
+
+This two-step conversion is necessary because Sideffect is a portable library that can run in environments without the Cloudflare runtime. Sideffect's `NonRetryableError` is a plain `Error` subclass; the native Cloudflare `NonRetryableError` is only available inside a Worker. The generated entrypoint bridges the two at runtime.
+
+---
+
+## Automatic conversion from schema decode failures
+
+You do not need to throw `NonRetryableError` manually when input validation fails. Sideffect automatically wraps schema decode errors in `NonRetryableError` internally.
+
+Whenever a step payload or result fails to decode against its `Schema`, Sideffect throws a `NonRetryableError` with a descriptive message:
+
+```
+Step "fetch user" payload decoding failed because the value did not match its schema.
+The workflow will not retry this invalid input. Cause: <parse error details>
+```
+
+The same applies to workflow-level payload decoding — if the incoming Cloudflare event payload does not match the schema provided to `Workflow.make({ payload: ... })`, Sideffect throws a `NonRetryableError` before your `run` function is called at all.
+
+This means schema validation failures are always terminal by design. Malformed input is not a transient failure and retrying will not fix it.
+
+---
+
+<Tip>
+  **When to throw `NonRetryableError` yourself:**
+
+  - **Invalid input** — a required field is missing, a value is out of range, or a referenced resource (user, record, file) simply does not exist and will not appear on retry.
+  - **Permission denied** — the workflow does not have access to the resource and that will not change without external intervention.
+  - **Business-logic violations** — e.g. a payment that has already been processed, an order that has already been cancelled.
+
+  **When to let retries happen (do not throw `NonRetryableError`):**
+
+  - **Transient network failures** — HTTP timeouts, DNS errors, upstream service unavailability.
+  - **Rate limits** — the external API is temporarily throttling requests.
+  - **Temporary service outages** — a database or third-party API is down and expected to recover.
+
+  Cloudflare Workflows will retry the step automatically according to the configured `retries` policy for all errors that are not `NonRetryableError`.
+</Tip>

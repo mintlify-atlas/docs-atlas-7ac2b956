@@ -1,0 +1,244 @@
+---
+title: "Workflow API Reference"
+sidebarTitle: "Workflow"
+description: "API reference for Workflow.make() and WorkflowDefinition.toLayer(). Creates typed Cloudflare Workflow definitions and WorkflowLayer instances."
+---
+
+`Workflow` is the entry point for defining a Cloudflare Workflow in Sideffect. It creates a typed workflow definition that you bind to an implementation and, from there, expose to the Cloudflare Workflows runtime. Import it directly from `sideffect`.
+
+```ts
+import { Workflow } from "sideffect";
+```
+
+---
+
+## `Workflow.make(options)`
+
+Creates a typed `WorkflowDefinition`. The definition holds the workflow name and payload schema but does not contain any executable logic yet — call `.toLayer(run)` on the returned object to attach the implementation.
+
+<ParamField path="options.name" type="string" required>
+  The Cloudflare Workflow name. Sideffect derives the entrypoint class name and
+  the `env` binding name from this value automatically.
+
+  | `name` value | Class name | `env` binding |
+  |---|---|---|
+  | `"image-processing"` | `ImageProcessing` | `IMAGE_PROCESSING` |
+  | `"add-numbers"` | `AddNumbers` | `ADD_NUMBERS` |
+  | `"billing"` | `Billing` | `BILLING` |
+</ParamField>
+
+<ParamField path="options.payload" type="Schema.Schema<Payload>">
+  An [Effect Schema](https://effect.website/docs/schema/introduction) used to
+  decode the raw Cloudflare workflow event payload before the `run` function
+  executes. Decode failures are automatically converted to `NonRetryableError`
+  so the workflow is not retried on invalid input.
+
+  If omitted, the payload is passed through as-is without decoding.
+</ParamField>
+
+**Returns** a `WorkflowDefinition<Payload, Env>` with a `toLayer()` method.
+
+---
+
+## `WorkflowDefinition.toLayer(run)`
+
+Binds a workflow definition to its implementation. The returned `WorkflowLayer` is what the Vite plugin discovers, or what you pass to `WorkflowEntrypoints.make()` when using plain Wrangler.
+
+<ParamField path="run" type="WorkflowRun<Payload, Result, Env>" required>
+  The workflow implementation. Receives two arguments:
+
+  - `workflow: WorkflowContext<Payload, Env>` — contains the decoded `payload`,
+    the full Cloudflare `event` object (with decoded payload attached), `env`
+    bindings, and the Worker `ctx`.
+  - `step: SideffectStep<Env>` — the Sideffect step helper (see below).
+
+  `run` may be an async function, a synchronous function, or an
+  `Effect.Effect`.
+</ParamField>
+
+**Returns** a `WorkflowLayer<Payload, Result, Env>` consumed by the Vite plugin or `WorkflowEntrypoints.make()`.
+
+---
+
+## `SideffectStep` methods
+
+The `step` object passed to every `run` function exposes four methods that mirror Cloudflare's native `WorkflowStep` API, with added type safety and schema validation.
+
+### `step.do(stepDefinition, payload, options?)`
+
+Runs a typed `StepDefinition` through Cloudflare's native step system. Sideffect decodes the payload with the step's `payload` schema before calling `run`, and decodes the result with the `result` schema before returning it to the workflow. Schema decode failures become `NonRetryableError`.
+
+<ParamField path="stepDefinition" type="StepDefinition<Payload, Result, Env>" required>
+  A step created with `Step.make(...)`, optionally decorated with
+  `Rollback.with(...)`.
+</ParamField>
+
+<ParamField path="payload" type="Payload" required>
+  The input value for the step. Must satisfy the step's `payload` schema.
+</ParamField>
+
+<ParamField path="options" type="StepOptions">
+  Optional Cloudflare step configuration. See [`StepOptions`](/api/step#stepoptions) for the full shape.
+
+  ```ts
+  {
+    retries?: {
+      limit: number;
+      delay: string | number;
+      backoff?: "constant" | "linear" | "exponential";
+    };
+    timeout?: string | number;
+    sensitive?: boolean;
+  }
+  ```
+</ParamField>
+
+**Returns** `Promise<Result>` — the decoded step result.
+
+---
+
+### `step.sleep(name, duration)`
+
+Pauses workflow execution for a fixed duration. The `name` is shown in the Cloudflare Workflows dashboard timeline.
+
+<ParamField path="name" type="string" required>
+  A human-readable label for this pause, e.g. `"wait before retry"`.
+</ParamField>
+
+<ParamField path="duration" type="string | number" required>
+  How long to pause. Pass a Cloudflare duration string such as `"1 second"`,
+  `"5 minutes"`, `"2 hours"`, or a number of **milliseconds**.
+</ParamField>
+
+**Returns** `Promise<void>`.
+
+---
+
+### `step.sleepUntil(name, timestamp)`
+
+Pauses workflow execution until a specific point in time.
+
+<ParamField path="name" type="string" required>
+  A human-readable label for this pause.
+</ParamField>
+
+<ParamField path="timestamp" type="Date | number" required>
+  A `Date` object or a Unix timestamp in **milliseconds**.
+</ParamField>
+
+**Returns** `Promise<void>`.
+
+---
+
+### `step.waitForEvent(name, options)`
+
+Suspends the workflow until an external event of the given type arrives.
+
+<ParamField path="name" type="string" required>
+  A human-readable label for this wait, e.g. `"await approval"`.
+</ParamField>
+
+<ParamField path="options.type" type="string" required>
+  The event type to wait for. Cloudflare matches events by this string.
+</ParamField>
+
+<ParamField path="options.timeout" type="string | number">
+  Optional maximum wait duration. A Cloudflare duration string such as
+  `"24 hours"` or a number of milliseconds. If the timeout elapses before the
+  event arrives, Cloudflare terminates the wait.
+</ParamField>
+
+**Returns** `Promise<WorkflowStepEvent<A>>`.
+
+---
+
+## Complete example
+
+The following workflow definition is taken from the Sideffect workbench. It demonstrates `Workflow.make`, `toLayer`, `step.do`, and `step.sleep` together.
+
+```ts
+import { Schema, Step, Workflow } from "sideffect";
+
+// Step definitions
+const addNumbers = Step.make("add numbers", {
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+  result: Schema.Number,
+  run: ({ left, right }) => left + right,
+});
+
+const multiplyNumber = Step.make("multiply number", {
+  payload: Schema.Struct({ value: Schema.Number, by: Schema.Number }),
+  result: Schema.Number,
+  run: async ({ value, by }) => value * by,
+});
+
+const formatNumber = Step.make("format number", {
+  payload: Schema.Number,
+  result: Schema.String,
+  run: (value) => `value:${value}`,
+});
+
+// Workflow definition
+const addNumbersWorkflow = Workflow.make({
+  name: "add-numbers",
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+});
+
+// Workflow layer (definition + implementation)
+export const addNumbersLayer = addNumbersWorkflow.toLayer(async ({ payload }, step) => {
+  const sum = await step.do(addNumbers, payload);
+  const doubled = await step.do(multiplyNumber, { value: sum, by: 2 });
+  const formatted = await step.do(formatNumber, doubled);
+
+  return { sum, doubled, formatted };
+});
+```
+
+Here is a more complete example from the README showing `step.sleep` and `step.waitForEvent`:
+
+```ts
+import { Schema, Step, Workflow } from "sideffect";
+
+const workflow = Workflow.make({
+  name: "image-processing",
+  payload: Schema.Struct({ imageKey: Schema.String }),
+});
+
+const fetchImageStep = Step.make("fetch image", {
+  payload: Schema.Struct({ imageKey: Schema.String }),
+  result: Schema.Struct({ data: Schema.Uint8Array }),
+  run: async (payload, ctx) => {
+    const object = await ctx.env.BUCKET.get(payload.imageKey);
+    const data = new Uint8Array(await object.arrayBuffer());
+    return { data };
+  },
+});
+
+const publishImageStep = Step.make("publish", {
+  payload: Schema.Struct({ imageKey: Schema.String, imageData: Schema.Uint8Array }),
+  result: Schema.Void,
+  run: async ({ imageKey, imageData }, ctx) => {
+    await ctx.env.BUCKET.put(`public/${imageKey}`, imageData);
+  },
+});
+
+export const myWorkflowLayer = workflow.toLayer(async (event, step) => {
+  const image = await step.do(fetchImageStep, { imageKey: event.payload.imageKey });
+
+  await step.sleep("wait briefly", "1 second");
+
+  await step.waitForEvent("await approval", { type: "approved", timeout: "24 hours" });
+
+  await step.do(publishImageStep, {
+    imageKey: event.payload.imageKey,
+    imageData: image.data,
+  });
+});
+```
+
+<Note>
+  The workflow `name` is the single source of truth for Cloudflare's internal
+  workflow name, the generated entrypoint class name, and the `env` binding.
+  Keep it stable across deployments — renaming a live workflow requires a
+  migration.
+</Note>

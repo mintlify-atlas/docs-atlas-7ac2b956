@@ -1,0 +1,222 @@
+---
+title: "withCloudflareWorkflows() Vite Plugin API"
+sidebarTitle: "withCloudflareWorkflows"
+description: "API reference for withCloudflareWorkflows(). Wraps @cloudflare/vite-plugin with Sideffect workflow discovery, auto-binding generation, and env type writing."
+---
+
+`withCloudflareWorkflows` is the primary Vite integration function for Sideffect. It wraps Cloudflare's Vite plugin factory, scans your configured workflow directories for `Workflow.make(...).toLayer(...)` exports, auto-generates Cloudflare workflow bindings, writes a `sideffect-env.d.ts` type declaration file, and replaces the Worker entry with a generated virtual module that exports named `WorkflowEntrypoint` subclasses. Import it from `sideffect/vite`.
+
+## Function signature
+
+```ts
+function withCloudflareWorkflows<Result>(
+  cloudflare: CloudflarePluginFactory<Result>,
+  options?: WithCloudflareWorkflowsOptions,
+): Array<Plugin | Result>
+```
+
+The function returns an array of exactly two plugins — a Sideffect pre-plugin that runs workflow discovery and virtual entry generation, followed by the resolved Cloudflare plugin. Spread the result into Vite's `plugins` array using the `...` spread operator.
+
+```ts
+export default defineConfig({
+  plugins: [
+    ...withCloudflareWorkflows(cloudflare, { /* options */ }),
+  ],
+});
+```
+
+## Parameters
+
+<ParamField path="cloudflare" type="CloudflarePluginFactory" required>
+  The `cloudflare` factory function imported from `@cloudflare/vite-plugin`. Sideffect calls it
+  internally after merging workflow bindings into the resolved Worker config, so you must pass the
+  factory itself rather than its return value.
+
+  ```ts
+  import { cloudflare } from "@cloudflare/vite-plugin";
+  ```
+</ParamField>
+
+<ParamField path="options" type="WithCloudflareWorkflowsOptions">
+  Optional configuration for Sideffect workflow discovery and Cloudflare plugin forwarding.
+  All fields are optional; sensible defaults apply.
+</ParamField>
+
+<ParamField path="options.workflowPaths" type="string[]">
+  Directories or individual files to scan for Sideffect workflow layers.
+  Sideffect uses TypeScript's AST parser to find static `Workflow.make({ name }).toLayer(...)`
+  export declarations and follows local barrel re-exports.
+
+  Accepts absolute paths or paths relative to the Wrangler config directory (or `process.cwd()` if
+  no `configPath` is set).
+
+  **Default:** `["src/workflows"]`
+</ParamField>
+
+<ParamField path="options.worker" type="string">
+  Override the Worker entry module path when it cannot be resolved from the Wrangler config.
+  Useful for monorepos or non-standard project layouts where `main` is not set.
+
+  ```ts
+  withCloudflareWorkflows(cloudflare, { worker: "./src/index.ts" })
+  ```
+</ParamField>
+
+<ParamField path="options.configPath" type="string">
+  Path to the Wrangler config file (`wrangler.toml` or `wrangler.json`).
+  Forwarded unchanged to `@cloudflare/vite-plugin`. Also used as the base directory for resolving
+  `workflowPaths` when specified.
+</ParamField>
+
+<ParamField path="options.config" type="WorkerConfigCustomizer">
+  A partial `WorkerConfig` object or a customizer function that is merged with the Wrangler config
+  before Sideffect injects its generated workflow bindings. Matches Cloudflare's native `config`
+  option behavior.
+
+  ```ts
+  // Object form — merged with defu
+  config: {
+    durable_objects: {
+      bindings: [{ name: "COUNTER", class_name: "Counter" }],
+    },
+    migrations: [{ tag: "v1", new_sqlite_classes: ["Counter"] }],
+  }
+
+  // Function form — may return a partial config or mutate in place
+  config: (workerConfig) => ({
+    name: workerConfig.name ?? "my-worker",
+  })
+  ```
+</ParamField>
+
+<ParamField path="options.persistState" type="boolean | { path: string }">
+  Enables local state persistence in Miniflare during `vite dev`.
+
+  - `true` — uses the default Miniflare persistence directory.
+  - `{ path: string }` — uses the specified directory.
+</ParamField>
+
+<ParamField path="options.inspectorPort" type="number | false">
+  V8 inspector port for Worker debugging. Pass `false` to disable the inspector entirely.
+</ParamField>
+
+<ParamField path="options.remoteBindings" type="boolean">
+  When `true`, Cloudflare uses real remote bindings (KV, R2, D1, etc.) during local development
+  instead of Miniflare simulations.
+</ParamField>
+
+<ParamField path="options.auxiliaryWorkers" type="array">
+  Additional Workers to run or build alongside the entry Worker. Each entry mirrors Cloudflare's
+  auxiliary Worker config shape, accepting either a `configPath` or an inline `config` customizer.
+</ParamField>
+
+<ParamField path="options.experimental" type="CloudflareExperimentalConfig">
+  Experimental Cloudflare Vite plugin options forwarded unchanged.
+  Includes `headersAndRedirectsDevModeSupport`, `prerenderWorker`, and `newConfig`.
+</ParamField>
+
+## Return value
+
+<ResponseField name="plugins" type="Array<Plugin | Result>">
+  A two-element array: `[sideffectPlugin, cloudflarePlugin]`. Spread it directly into Vite's
+  `plugins` array.
+</ResponseField>
+
+## Examples
+
+### Minimal setup
+
+The simplest usage — scan the default `src/workflows` directory and forward no extra Cloudflare options.
+
+```ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [
+    ...withCloudflareWorkflows(cloudflare),
+  ],
+});
+```
+
+### With custom workflow paths and state persistence
+
+Point Sideffect at a shared monorepo workflow file and enable local state persistence.
+
+```ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [
+    ...withCloudflareWorkflows(cloudflare, {
+      workflowPaths: [
+        "../shared/src/workflows.ts",
+        "../shared/src/image-workflow.ts",
+      ],
+      persistState: true,
+      inspectorPort: 9229,
+    }),
+  ],
+});
+```
+
+### TanStack Start (with `viteEnvironment`, inline `config`, and custom workflow paths)
+
+A full example using TanStack Start where Sideffect's Worker runs in the `"ssr"` Vite environment
+and the Wrangler config is augmented with Durable Object bindings and a pre-existing native
+workflow binding.
+
+```ts
+import { defineConfig } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [
+    ...withCloudflareWorkflows(cloudflare, {
+      viteEnvironment: { name: "ssr" },
+      workflowPaths: [
+        "../shared/src/workflows.ts",
+        "../shared/src/default-direct-workflow.ts",
+        "../shared/src/default-local-layer-workflow.ts",
+      ],
+      config: {
+        durable_objects: {
+          bindings: [{ name: "COUNTER", class_name: "Counter" }],
+        },
+        migrations: [{ tag: "v1", new_sqlite_classes: ["Counter"] }],
+        workflows: [{ binding: "NATIVE_CHECK", name: "native-check", class_name: "NativeCheck" }],
+      },
+    }),
+    tailwindcss(),
+    tanstackStart(),
+    viteReact(),
+  ],
+});
+```
+
+<Note>
+  Native workflow bindings listed under `config.workflows` (those with a `script_name` pointing to
+  another Worker, or bindings with no matching Sideffect layer) are preserved and merged into the
+  final Wrangler config unchanged. Only bindings whose `class_name` matches a discovered Sideffect
+  layer are wrapped with a generated `WorkflowEntrypoint` subclass.
+</Note>
+
+## Generated artifacts
+
+When `withCloudflareWorkflows` resolves the Vite config it produces two artifacts:
+
+1. **`sideffect-env.d.ts`** — written to the Wrangler config directory. Augments the global `Env`
+   and `Cloudflare.Env` interfaces with typed `Workflow<Payload>` bindings for every discovered
+   Sideffect layer.
+
+2. **`virtual:sideffect/entry`** — an in-memory Vite virtual module that re-exports everything from
+   your original Worker entry and additionally exports a named `WorkflowEntrypoint` subclass for
+   each discovered layer. Cloudflare's plugin is pointed at this virtual entry instead of your
+   original `main`.

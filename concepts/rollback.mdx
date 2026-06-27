@@ -1,0 +1,125 @@
+---
+title: "Rollback Handlers for Workflow Step Compensation"
+sidebarTitle: "Rollback"
+description: "Attach Cloudflare-native rollback handlers to Sideffect steps with Rollback.with(). Covers handler context, configuration, and the pipe() pattern."
+---
+
+Cloudflare Workflows support a native rollback mechanism: when a step fails, Cloudflare can invoke a compensation function to undo or clean up work that step already completed (for example, deleting a file that was written to R2). Sideffect surfaces this feature through `Rollback.with()`, which lets you attach a typed rollback handler — and an optional rollback step configuration — to any `StepDefinition` without modifying the step's core `run` logic.
+
+<Warning>
+  Rollback execution order and timing are owned entirely by Cloudflare. Sideffect
+  only registers the handler and forwards it to Cloudflare's native step rollback
+  system. Do not rely on a specific invocation order across multiple compensating
+  steps.
+</Warning>
+
+## Attaching a Rollback Handler with `Rollback.with`
+
+```ts
+import { Rollback } from "sideffect";
+
+const stepWithRollback = myStep.pipe(
+  Rollback.with(async (result, ctx) => {
+    // compensation logic
+  }),
+);
+```
+
+`Rollback.with(handler, config?)` returns a function that accepts a `StepDefinition` and produces a new `StepDefinition` with the rollback handler attached. The original step's `name`, `payloadSchema`, `resultSchema`, and `run` are preserved unchanged.
+
+The optional second argument `config` is a Cloudflare `WorkflowStepConfig` that controls retry and timeout behaviour for the rollback step itself:
+
+```ts
+const stepWithRollback = myStep.pipe(
+  Rollback.with(
+    async (_result, ctx) => { /* ... */ },
+    {
+      retries: { limit: 2, delay: "3 seconds", backoff: "linear" },
+      timeout: "10 seconds",
+    },
+  ),
+);
+```
+
+## The `pipe()` Pattern
+
+Every `StepDefinition` exposes a `pipe(fn)` method that applies a transformation and returns the result. `Rollback.with(...)` is designed to be used directly with `pipe`:
+
+```ts
+const publishImageStep = Step.make("publish image", {
+  payload: Schema.Struct({ imageKey: Schema.String, imageData: Schema.Uint8Array }),
+  result: Schema.Void,
+  run: async ({ imageKey, imageData }, ctx) => {
+    await ctx.env.BUCKET.put(`public/${imageKey}`, imageData);
+  },
+}).pipe(
+  Rollback.with((_result, ctx) => {
+    return ctx.env.BUCKET.delete(`public/${ctx.payload.imageKey}`);
+  }),
+);
+```
+
+In this example, if `publishImageStep` fails after writing to R2, Cloudflare invokes the rollback handler to delete the file that was just written.
+
+## The `RollbackContext` Object
+
+The second argument to a rollback handler is a `RollbackContext` with the following properties:
+
+| Property       | Type                    | Description                                                                     |
+| -------------- | ----------------------- | ------------------------------------------------------------------------------- |
+| `payload`      | `Payload`               | The original step payload that was passed to `run`.                             |
+| `result`       | `Result \| undefined`   | The step output if the step completed before failure, or `undefined` otherwise. |
+| `failure`      | `unknown`               | The error that caused Cloudflare to invoke rollback.                            |
+| `env`          | `Env`                   | Worker environment bindings (R2, KV, AI, Durable Objects, etc.).                |
+| `ctx`          | `unknown`               | Worker execution context from the `WorkflowEntrypoint` instance.                |
+| `workflowStep` | `NativeWorkflowStep`    | The raw Cloudflare `WorkflowStep` API for advanced native step operations.       |
+| `native`       | `WorkflowRollbackContext<Result>` | The raw Cloudflare `WorkflowRollbackContext` if you need direct access to the underlying object. |
+
+## Full Example — Rollback on Publish Failure
+
+```ts
+import { Schema, Step, Rollback } from "sideffect";
+
+const publishImageStep = Step.make("publish image", {
+  payload: Schema.Struct({
+    imageKey: Schema.String,
+    imageData: Schema.Uint8Array,
+  }),
+  result: Schema.Void,
+  run: async ({ imageKey, imageData }, ctx) => {
+    await ctx.env.BUCKET.put(`public/${imageKey}`, imageData);
+  },
+}).pipe(
+  Rollback.with((_result, ctx) => {
+    // Delete the object that was written to R2 if a later step fails
+    return ctx.env.BUCKET.delete(`public/${ctx.payload.imageKey}`);
+  }),
+);
+```
+
+## Rollback Handlers and Effect
+
+Like step `run` functions, rollback handlers may return a direct value, a `Promise`, or an `Effect.Effect<void, unknown, never>`:
+
+```ts
+const myStep = Step.make("process data", { ... }).pipe(
+  Rollback.with((_result, ctx) =>
+    Effect.promise(() => ctx.env.QUEUE.send({ type: "rollback", id: ctx.payload.id })),
+  ),
+);
+```
+
+<CardGroup cols={2}>
+  <Card title="Steps" icon="puzzle-piece" href="/concepts/steps">
+    Define reusable, schema-validated workflow activities.
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/concepts/workflows">
+    Compose steps into full workflow pipelines.
+  </Card>
+  <Card title="Step Context" icon="circle-info" href="/concepts/step-context">
+    Access env bindings, retry counts, and step metadata inside a step.
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Throw NonRetryableError to stop retries immediately.
+  </Card>
+</CardGroup>

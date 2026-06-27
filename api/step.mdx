@@ -1,0 +1,191 @@
+---
+title: "Step API Reference"
+sidebarTitle: "Step"
+description: "API reference for Step.make(). Defines reusable, schema-validated workflow step activities with typed payloads and results."
+---
+
+`Step` is used to create reusable typed workflow activities. Each step has a name, an input schema, an output schema, and a `run` function that performs the work. Sideffect validates both the payload and the result against their schemas automatically, so your `run` function always receives the correct shape and always returns the correct shape. Import `Step` directly from `sideffect`.
+
+```ts
+import { Step } from "sideffect";
+```
+
+---
+
+## `Step.make(name, options)`
+
+Creates a reusable `StepDefinition`. The returned definition can be passed to `step.do(...)` in any workflow, decorated with `Rollback.with(...)` via `.pipe()`, or composed with other helpers.
+
+<ParamField path="name" type="string" required>
+  Human-readable name for the step. This string appears in the Cloudflare
+  Workflows dashboard timeline and in any schema decode error messages.
+  Examples: `"fetch image"`, `"send email"`, `"add numbers"`.
+</ParamField>
+
+<ParamField path="options.payload" type="Schema.Schema<Payload>" required>
+  [Effect Schema](https://effect.website/docs/schema/introduction) for the
+  step's input. Sideffect decodes the raw payload value with this schema before
+  calling `run`. If decoding fails, a `NonRetryableError` is thrown and the
+  workflow is not retried.
+</ParamField>
+
+<ParamField path="options.result" type="Schema.Schema<Result>" required>
+  Effect Schema for the step's output. Sideffect decodes the value returned by
+  `run` with this schema before returning it to the workflow. If decoding fails,
+  a `NonRetryableError` is thrown.
+</ParamField>
+
+<ParamField path="options.run" type="(payload: Payload, context: StepContext<Env>) => MaybeEffect<Result>" required>
+  The step implementation. Receives the decoded `payload` and a `StepContext`
+  (see below). May return a direct value, a `Promise`, or an `Effect.Effect`.
+
+  `StepContext<Env>` extends Cloudflare's native `WorkflowStepContext` and adds:
+  - `ctx.env` — Worker environment bindings, typed from your project's `Cloudflare.Env`.
+  - `ctx.ctx` — Worker execution context.
+  - `ctx.workflowStep` — raw `NativeWorkflowStep` API for advanced use cases.
+
+  The inherited Cloudflare fields include:
+  - `ctx.attempt` — current retry attempt number (1-based).
+  - `ctx.step.name` — the step name.
+  - `ctx.config` — the step config (timeout, retries) if configured.
+</ParamField>
+
+**Returns** a `StepDefinition<Payload, Result, Env>` with a `.pipe()` method for applying transformations such as `Rollback.with(...)`.
+
+---
+
+## `StepOptions`
+
+Passed as the third argument to `step.do(stepDefinition, payload, options?)` inside a workflow `run` function. All fields are optional.
+
+```ts
+interface StepOptions {
+  retries?: {
+    limit: number;
+    delay: string | number;
+    backoff?: "constant" | "linear" | "exponential";
+  };
+  timeout?: string | number;
+  sensitive?: boolean;
+}
+```
+
+<ParamField path="retries.limit" type="number">
+  Maximum number of retries Cloudflare will attempt if the step throws.
+</ParamField>
+
+<ParamField path="retries.delay" type="string | number">
+  Delay between retries. A Cloudflare duration string (e.g. `"15 seconds"`) or
+  a number of milliseconds.
+</ParamField>
+
+<ParamField path="retries.backoff" type='"constant" | "linear" | "exponential"'>
+  Backoff strategy for retry delays. Defaults to `"constant"` when not
+  specified.
+</ParamField>
+
+<ParamField path="timeout" type="string | number">
+  Maximum execution time for the step. A Cloudflare duration string (e.g.
+  `"5 minutes"`) or a number of milliseconds.
+</ParamField>
+
+<ParamField path="sensitive" type="boolean">
+  When `true`, Cloudflare treats step logs and output as sensitive and redacts
+  them from the Workflows dashboard.
+</ParamField>
+
+<Note>
+  `StepOptions` are only applied when you pass them at call-time via
+  `step.do(myStep, payload, options)`. They are not stored on the
+  `StepDefinition` itself, so you can reuse the same step definition with
+  different options in different parts of a workflow.
+</Note>
+
+---
+
+## Examples
+
+### `addNumbers` — synchronous step
+
+```ts
+import { Schema, Step } from "sideffect";
+
+export const addNumbers = Step.make("add numbers", {
+  payload: Schema.Struct({ left: Schema.Number, right: Schema.Number }),
+  result: Schema.Number,
+  run: ({ left, right }) => left + right,
+});
+```
+
+### `multiplyNumber` — async step
+
+```ts
+import { Schema, Step } from "sideffect";
+
+export const multiplyNumber = Step.make("multiply number", {
+  payload: Schema.Struct({ value: Schema.Number, by: Schema.Number }),
+  result: Schema.Number,
+  run: async ({ value, by }) => value * by,
+});
+```
+
+### `effectUppercase` — Effect step
+
+```ts
+import { Effect } from "effect";
+import { Schema, Step } from "sideffect";
+
+export const effectUppercase = Step.make("effect uppercase", {
+  payload: Schema.String,
+  result: Schema.String,
+  run: (message) => Effect.succeed(message.toUpperCase()),
+});
+```
+
+### Using `StepOptions` at call-time
+
+```ts
+export const stepContextLayer = workflow.toLayer(async ({ payload }, step) => {
+  return step.do(readStepContext, payload, { timeout: "5 minutes" });
+});
+```
+
+### Step with retry config
+
+```ts
+export const workflowLayer = workflow.toLayer(async ({ payload }, step) => {
+  const result = await step.do(fetchImageStep, { imageKey: payload.imageKey }, {
+    retries: {
+      limit: 3,
+      delay: "15 seconds",
+      backoff: "exponential",
+    },
+    timeout: "2 minutes",
+  });
+
+  return result;
+});
+```
+
+### Accessing `env` and `ctx` in a step
+
+```ts
+import { Schema, Step } from "sideffect";
+
+export const callCounterDurableObject = Step.make("call counter durable object", {
+  payload: Schema.Struct({ key: Schema.String }),
+  result: Schema.Struct({ count: Schema.Number }),
+  run: async ({ key }, ctx) => {
+    const id = ctx.env.COUNTER.idFromName(`workflow-${key}`);
+    const response = await ctx.env.COUNTER.get(id).fetch("https://counter.local/count");
+    return response.json();
+  },
+});
+```
+
+<Warning>
+  Never throw a `NonRetryableError` from inside a step's `run` function to
+  signal a schema problem — Sideffect does this automatically when a payload or
+  result fails to decode. Only throw `NonRetryableError` explicitly when the
+  failure is logically unrecoverable (e.g. a missing required resource).
+</Warning>

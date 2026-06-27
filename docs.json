@@ -1,72 +1,99 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Sideffect",
+  "theme": "luma",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
-  },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "primary": "#F6821F",
+    "light": "#FFF4EB",
+    "dark": "#C25C00"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/eersnington/sideffect"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/eersnington/sideffect"
     }
+  },
+  "navigation": {
+
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/workflows",
+              "concepts/steps",
+              "concepts/rollback",
+              "concepts/step-context",
+              "concepts/error-handling"
+            ]
+          },
+          {
+            "group": "Vite Integration",
+            "pages": [
+              "vite/setup",
+              "vite/workflow-discovery",
+              "vite/generated-types"
+            ]
+          },
+          {
+            "group": "Manual Setup",
+            "pages": [
+              "manual/plain-wrangler",
+              "manual/workflow-entrypoints"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/workflow",
+              "api/step",
+              "api/rollback",
+              "api/schema",
+              "api/non-retryable-error"
+            ]
+          },
+          {
+            "group": "Vite API",
+            "pages": [
+              "api/with-cloudflare-workflows",
+              "api/create-sideffect-workflows-plugin"
+            ]
+          },
+          {
+            "group": "Cloudflare API",
+            "pages": [
+              "api/workflow-entrypoints",
+              "api/workflow-engine"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

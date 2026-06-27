@@ -1,0 +1,158 @@
+---
+title: "createSideffectWorkflowsPlugin() Low-Level Plugin Factory"
+sidebarTitle: "createSideffectWorkflowsPlugin"
+description: "createSideffectWorkflowsPlugin() creates the Sideffect Vite plugin without invoking Cloudflare's plugin factory. Use for tests or custom plugin composition."
+---
+
+`createSideffectWorkflowsPlugin` is the low-level equivalent of `withCloudflareWorkflows`. It creates only the Sideffect plugin — it does **not** call Cloudflare's plugin factory for you. Instead it exposes a `cloudflare` property on the returned plugin object that contains the fully resolved `CloudflarePluginConfig` you pass manually to Cloudflare's factory. This gives you full control over plugin ordering, multiple-Vite-environment setups, and test harnesses where you want to inspect the resolved Cloudflare config before any plugin runs. Import it from `sideffect/vite`.
+
+<Info>
+  Most applications should use `withCloudflareWorkflows()` instead. It calls
+  `createSideffectWorkflowsPlugin` internally and automatically spreads both plugins. Reach for
+  `createSideffectWorkflowsPlugin` only when you need explicit control over how the Cloudflare
+  plugin is constructed or when you are writing tests that inspect the resolved config.
+</Info>
+
+## Function signature
+
+```ts
+function createSideffectWorkflowsPlugin(
+  options?: WithCloudflareWorkflowsOptions,
+): SideffectWorkflowsPlugin
+```
+
+## Parameters
+
+<ParamField path="options" type="WithCloudflareWorkflowsOptions">
+  The same options accepted by `withCloudflareWorkflows()`. All fields are optional.
+  See the [`withCloudflareWorkflows` API reference](/api/with-cloudflare-workflows) for full
+  documentation of each option.
+</ParamField>
+
+## Return value
+
+<ResponseField name="SideffectWorkflowsPlugin" type="object">
+  A Vite `Plugin` object extended with an additional `cloudflare` field.
+
+  <ResponseField name="name" type='"sideffect:cloudflare-workflows"'>
+    The plugin name used by Vite for ordering and error messages.
+  </ResponseField>
+
+  <ResponseField name="enforce" type='"pre"'>
+    The plugin runs before standard Vite plugins so it can intercept the virtual entry resolution
+    before Cloudflare's plugin processes the Worker entry.
+  </ResponseField>
+
+  <ResponseField name="cloudflare" type="CloudflarePluginConfig">
+    The fully merged `CloudflarePluginConfig` object to pass directly to Cloudflare's Vite plugin
+    factory: `cloudflare(plugin.cloudflare)`.
+
+    This config object includes a `config` hook that Sideffect uses internally to discover workflows,
+    write `sideffect-env.d.ts`, and rewrite the `main` field to the virtual entry. You must pass it
+    to Cloudflare's plugin unchanged — do not spread or destructure it before passing.
+  </ResponseField>
+</ResponseField>
+
+## Example
+
+```ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import { createSideffectWorkflowsPlugin } from "sideffect/vite";
+
+const sideffect = createSideffectWorkflowsPlugin({ workflowPaths: ["src/workflows"] });
+
+export default defineConfig({
+  plugins: [sideffect, cloudflare(sideffect.cloudflare)],
+});
+```
+
+This is exactly equivalent to:
+
+```ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [...withCloudflareWorkflows(cloudflare, { workflowPaths: ["src/workflows"] })],
+});
+```
+
+---
+
+## `collectWorkflowEntries()`
+
+Also exported from `sideffect/vite`, `collectWorkflowEntries` performs the static workflow
+discovery step in isolation — without creating a Vite plugin or running inside a Vite build. Use it
+for programmatic tooling, code generators, or tests that need to inspect discovered workflows
+without starting Vite.
+
+### Function signature
+
+```ts
+function collectWorkflowEntries(
+  patterns: string[],
+  baseDirectory?: string,
+): CapturedSideffectWorkflow[]
+```
+
+### Parameters
+
+<ParamField path="patterns" type="string[]" required>
+  Array of file paths or directory paths to scan. Paths are resolved relative to `baseDirectory`.
+  Sideffect uses TypeScript's AST parser to find static `Workflow.make({ name }).toLayer(...)`
+  exports and follows local barrel re-exports.
+</ParamField>
+
+<ParamField path="baseDirectory" type="string">
+  Base directory used when resolving entries in `patterns`. Defaults to `process.cwd()`.
+</ParamField>
+
+### Return value
+
+<ResponseField name="CapturedSideffectWorkflow[]" type="array">
+  An array of discovered workflow configs. Each entry has the following shape:
+
+  <ResponseField name="kind" type='"sideffect"'>
+    Always `"sideffect"` for entries returned by this function.
+  </ResponseField>
+
+  <ResponseField name="config" type="WorkflowConfigEntry">
+    The Cloudflare workflow binding config auto-derived from the workflow name:
+
+    - `binding` — screaming-snake-case version of the workflow name (e.g. `"RESIZE_IMAGE"`).
+    - `name` — the original workflow name from `Workflow.make({ name })`.
+    - `class_name` — PascalCase identifier safe for use as a JavaScript export (e.g. `"ResizeImage"`).
+  </ResponseField>
+
+  <ResponseField name="layer" type="WorkflowLayerImport">
+    Import location of the discovered layer:
+
+    - `modulePath` — absolute path to the source file containing the export.
+    - `exportKind` — `"named"` or `"default"`.
+    - `exportName` — the export identifier name, or `"default"` for default exports.
+  </ResponseField>
+</ResponseField>
+
+### Example
+
+```ts
+import { collectWorkflowEntries } from "sideffect/vite";
+
+const workflows = collectWorkflowEntries(["src/workflows"], "/path/to/project");
+
+for (const workflow of workflows) {
+  console.log(workflow.config.class_name); // e.g. "ResizeImage"
+  console.log(workflow.config.binding);    // e.g. "RESIZE_IMAGE"
+  console.log(workflow.layer.modulePath);  // e.g. "/path/to/project/src/workflows/resize-image.ts"
+  console.log(workflow.layer.exportName);  // e.g. "resizeImageLayer"
+}
+```
+
+<Note>
+  `collectWorkflowEntries` requires TypeScript to be installed in your project — it dynamically
+  loads the `typescript` package at runtime for AST parsing. If TypeScript cannot be resolved, it
+  throws a `TypeScriptWorkflowDiscoveryError` with installation instructions. Runtime usage of
+  `sideffect` and `sideffect/cloudflare` does not require TypeScript.
+</Note>

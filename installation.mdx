@@ -1,0 +1,127 @@
+---
+title: "Install Sideffect in Your Cloudflare Worker Project"
+sidebarTitle: "Installation"
+description: "Add Sideffect to a Cloudflare Worker project. Covers peer dependencies, package manager commands, and TypeScript configuration."
+---
+
+Installing Sideffect adds the core library and its required peer dependency, [Effect](https://effect.website). Effect provides the schema primitives (`Schema.Struct`, `Schema.String`, and friends) that back Sideffect's typed step payloads and results. If you are using the Vite-based setup — the recommended path — you will also install `@cloudflare/vite-plugin` so the workflow auto-discovery plugin has something to wrap. The `@cloudflare/workers-types` package is optional but strongly recommended for full `env` type coverage inside step `run` functions.
+
+<Note>
+  Sideffect requires **Node.js >= 22.12.0**. Make sure your local environment and any CI runners meet this requirement before installing.
+</Note>
+
+<Steps>
+
+### Install `sideffect` and `effect`
+
+Install the core package together with its required peer dependency.
+
+<CodeGroup>
+
+```bash npm
+npm install sideffect effect
+```
+
+```bash yarn
+yarn add sideffect effect
+```
+
+```bash pnpm
+pnpm add sideffect effect
+```
+
+```bash bun
+bun add sideffect effect
+```
+
+</CodeGroup>
+
+The minimum supported version of `effect` is `>=4.0.0-beta.75`.
+
+### Install `@cloudflare/vite-plugin` (Vite users)
+
+If you are using the Vite adapter for automatic workflow discovery, add the Cloudflare Vite plugin. It is an optional peer dependency — skip this step if you are using plain Wrangler.
+
+<CodeGroup>
+
+```bash npm
+npm install --save-dev @cloudflare/vite-plugin
+```
+
+```bash yarn
+yarn add --dev @cloudflare/vite-plugin
+```
+
+```bash pnpm
+pnpm add --save-dev @cloudflare/vite-plugin
+```
+
+```bash bun
+bun add --dev @cloudflare/vite-plugin
+```
+
+</CodeGroup>
+
+The minimum supported version is `^1.40.0`.
+
+### Configure TypeScript
+
+Sideffect step `run` functions access Cloudflare bindings through `ctx.env`, which is typed from your project's `Cloudflare.Env`. Add `@cloudflare/workers-types` to your dev dependencies and reference it in `tsconfig.json`:
+
+<CodeGroup>
+
+```bash npm
+npm install --save-dev @cloudflare/workers-types
+```
+
+```bash yarn
+yarn add --dev @cloudflare/workers-types
+```
+
+```bash pnpm
+pnpm add --save-dev @cloudflare/workers-types
+```
+
+```bash bun
+bun add --dev @cloudflare/workers-types
+```
+
+</CodeGroup>
+
+Then add the types to your `tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "types": ["@cloudflare/workers-types"]
+  }
+}
+```
+
+Alternatively, generate precise types for your specific Worker with `wrangler types` or augment the global `Cloudflare.Env` interface in `src/env.d.ts`.
+
+### Configure the Vite plugin (Vite users)
+
+Wrap the `cloudflare` plugin with `withCloudflareWorkflows` in your `vite.config.ts`. This tells Sideffect to scan your workflow directories and generate bindings automatically at dev and build time.
+
+```ts vite.config.ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import { withCloudflareWorkflows } from "sideffect/vite";
+
+export default defineConfig({
+  plugins: [
+    withCloudflareWorkflows(cloudflare, {
+      workflowPaths: ["src/workflows"],
+    }),
+  ],
+});
+```
+
+See the [Vite Integration](/vite/setup) guide for the full list of `withCloudflareWorkflows` options, including how to merge additional Wrangler config such as Durable Object bindings.
+
+</Steps>
